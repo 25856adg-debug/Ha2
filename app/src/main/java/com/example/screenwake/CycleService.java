@@ -25,7 +25,6 @@ public class CycleService extends Service {
     public static void start(Context context) {
         Intent intent = new Intent(context, CycleService.class);
         intent.setAction(ACTION_START);
-
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent);
@@ -63,7 +62,6 @@ public class CycleService extends Service {
 
         try {
             Notification notification = buildNotification();
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                         NOTIFICATION_ID,
@@ -73,19 +71,19 @@ public class CycleService extends Service {
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
-
         } catch (Exception e) {
             LogManager.log(this, "前台服务启动失败：" + e.getMessage());
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        // 检查是否存在尚未结束的一小时指令窗口
-        long savedDeadline = ConfigManager.getCommandWindowEnd(this);
-
-        if (savedDeadline > 0) {
-            CommandPoller.restoreWindow(this);
+        // ========== 改动点：前台服务一启动就把轮询拉起来（常驻） ==========
+        try {
+            CommandPoller.ensureRunning(this);
+        } catch (Exception e) {
+            LogManager.log(this, "恢复指令轮询失败：" + e.getMessage());
         }
+        // =========================================================
 
         LogManager.log(this, "循环服务运行中");
 
@@ -94,20 +92,15 @@ public class CycleService extends Service {
     }
 
     private void createNotificationChannel() {
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "设备指令接收服务",
                     NotificationManager.IMPORTANCE_LOW
             );
-
             channel.setDescription("保持设备指令接收窗口运行");
-
             NotificationManager manager =
                     getSystemService(NotificationManager.class);
-
             if (manager != null) {
                 manager.createNotificationChannel(channel);
             }
@@ -115,9 +108,7 @@ public class CycleService extends Service {
     }
 
     private Notification buildNotification() {
-
         Intent openIntent = new Intent(this, MainActivity.class);
-
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,
                 402,
@@ -127,7 +118,6 @@ public class CycleService extends Service {
         );
 
         Notification.Builder builder;
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder = new Notification.Builder(this, CHANNEL_ID);
         } else {
