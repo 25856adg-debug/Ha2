@@ -11,6 +11,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
@@ -33,8 +34,10 @@ public class BrowserActivity extends Activity {
     private FrameLayout root;
     private LinearLayout content;
     private LinearLayout bottomBar;
+
     private Button moveButton;
     private boolean barMoved = false;
+
     private EditText address;
     private WebView web;
 
@@ -46,7 +49,7 @@ public class BrowserActivity extends Activity {
     private static final int FILE_REQUEST = 1001;
 
     private int dp(float n) {
-        return (int)(n * getResources()
+        return (int) (n * getResources()
                 .getDisplayMetrics().density + 0.5f);
     }
 
@@ -54,7 +57,6 @@ public class BrowserActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
-        // 键盘弹出时自动调整页面高度
         getWindow().setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         );
@@ -71,7 +73,7 @@ public class BrowserActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setBackgroundColor(Color.WHITE);
 
-        // ================= 网页区域 =================
+        // ================= 网页 =================
 
         web = new WebView(this);
 
@@ -79,14 +81,12 @@ public class BrowserActivity extends Activity {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setDatabaseEnabled(true);
 
-        // 网页缩放
         web.getSettings().setSupportZoom(true);
         web.getSettings().setBuiltInZoomControls(true);
         web.getSettings().setDisplayZoomControls(false);
-
         web.getSettings().setAllowFileAccess(true);
 
-        // 支持网页文字选择、复制
+        // 长按网页文字，支持选择和复制
         web.setLongClickable(true);
         web.setHapticFeedbackEnabled(true);
 
@@ -103,16 +103,14 @@ public class BrowserActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 if (address != null && url != null) {
                     address.setText(url);
-                    address.setSelection(
-                            address.getText().length()
-                    );
+                    address.setSelection(address.getText().length());
                 }
             }
         });
 
         web.setWebChromeClient(new WebChromeClient() {
 
-            // 网页文件上传
+            // 文件上传
             @Override
             public boolean onShowFileChooser(
                     WebView view,
@@ -171,7 +169,7 @@ public class BrowserActivity extends Activity {
             }
         });
 
-        // ================= 下载功能 =================
+        // ================= 下载 =================
 
         web.setDownloadListener(new DownloadListener() {
 
@@ -184,7 +182,6 @@ public class BrowserActivity extends Activity {
                     long contentLength) {
 
                 try {
-
                     String fileName = URLUtil.guessFileName(
                             url,
                             contentDisposition,
@@ -204,7 +201,6 @@ public class BrowserActivity extends Activity {
                     }
 
                     request.addRequestHeader("User-Agent", userAgent);
-
                     request.setTitle(fileName);
                     request.setDescription("正在下载文件");
 
@@ -232,7 +228,6 @@ public class BrowserActivity extends Activity {
                     ).show();
 
                 } catch (Exception e) {
-
                     Toast.makeText(
                             BrowserActivity.this,
                             "下载失败：" + e.getMessage(),
@@ -242,92 +237,89 @@ public class BrowserActivity extends Activity {
             }
         });
 
-        // 网页占据上方剩余空间
+        // 网页占据上方空间
         content.addView(
                 web,
                 new LinearLayout.LayoutParams(-1, 0, 1)
         );
 
-        // ================= 底部控制栏 =================
-
         // ================= 控制栏 =================
 
-bottomBar = new LinearLayout(this);
-bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-bottomBar.setGravity(Gravity.CENTER_VERTICAL);
-bottomBar.setPadding(dp(3), dp(4), dp(3), dp(4));
-bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
+        bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
+        bottomBar.setPadding(dp(3), dp(4), dp(3), dp(4));
+        bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
 
-// 放大镜按钮：点击后移动整条控制栏
-moveButton = makeButton("⌕");
-moveButton.setTextSize(22);
+        // 放大镜按钮
+        moveButton = makeButton("⌕");
+        moveButton.setTextSize(22);
 
-bottomBar.addView(
-        moveButton,
-        new LinearLayout.LayoutParams(dp(42), dp(48))
-);
+        bottomBar.addView(
+                moveButton,
+                new LinearLayout.LayoutParams(dp(42), dp(48))
+        );
 
-moveButton.setOnClickListener(v -> toggleBarPosition());
+        moveButton.setOnClickListener(v -> toggleBarPosition());
 
-// 地址输入框
-address = new EditText(this);
-address.setSingleLine(true);
-address.setTextSize(14);
-address.setHint("输入网址或搜索内容");
-address.setSelectAllOnFocus(true);
-address.setImeOptions(EditorInfo.IME_ACTION_GO);
+        // 地址栏
+        address = new EditText(this);
+        address.setSingleLine(true);
+        address.setTextSize(14);
+        address.setHint("输入网址或搜索内容");
+        address.setSelectAllOnFocus(true);
+        address.setImeOptions(EditorInfo.IME_ACTION_GO);
 
-bottomBar.addView(
-        address,
-        new LinearLayout.LayoutParams(0, dp(48), 1)
-);
+        bottomBar.addView(
+                address,
+                new LinearLayout.LayoutParams(0, dp(48), 1)
+        );
 
-// 打开按钮
-Button go = makeButton("打开");
+        // 打开按钮
+        Button go = makeButton("打开");
 
-bottomBar.addView(
-        go,
-        new LinearLayout.LayoutParams(dp(60), dp(48))
-);
+        bottomBar.addView(
+                go,
+                new LinearLayout.LayoutParams(dp(60), dp(48))
+        );
 
-go.setOnClickListener(v -> loadAddress());
+        go.setOnClickListener(v -> loadAddress());
 
-// 刷新按钮
-Button refresh = makeButton("刷新");
+        // 刷新按钮
+        Button refresh = makeButton("刷新");
 
-bottomBar.addView(
-        refresh,
-        new LinearLayout.LayoutParams(dp(60), dp(48))
-);
+        bottomBar.addView(
+                refresh,
+                new LinearLayout.LayoutParams(dp(60), dp(48))
+        );
 
-refresh.setOnClickListener(v -> web.reload());
+        refresh.setOnClickListener(v -> web.reload());
 
-// 键盘回车打开
-address.setOnEditorActionListener((v, actionId, event) -> {
+        // 键盘回车打开
+        address.setOnEditorActionListener((v, actionId, event) -> {
 
-    if (event != null &&
-            event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
-            event.getAction() == KeyEvent.ACTION_DOWN) {
-        loadAddress();
-        return true;
-    }
+            if (event != null &&
+                    event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
+                    event.getAction() == KeyEvent.ACTION_DOWN) {
+                loadAddress();
+                return true;
+            }
 
-    if (actionId == EditorInfo.IME_ACTION_GO ||
-            actionId == EditorInfo.IME_ACTION_DONE ||
-            actionId == EditorInfo.IME_ACTION_SEARCH) {
-        loadAddress();
-        return true;
-    }
+            if (actionId == EditorInfo.IME_ACTION_GO ||
+                    actionId == EditorInfo.IME_ACTION_DONE ||
+                    actionId == EditorInfo.IME_ACTION_SEARCH) {
+                loadAddress();
+                return true;
+            }
 
-    return false;
-});
+            return false;
+        });
 
-// 初始位置：底部
-content.addView(
-        bottomBar,
-        new LinearLayout.LayoutParams(-1, -2)
-);
-
+        // 初始位置：底部
+        content.addView(
+                bottomBar,
+                new LinearLayout.LayoutParams(-1, -2)
+        );
 
         root.addView(
                 content,
@@ -337,59 +329,70 @@ content.addView(
         setContentView(root);
     }
 
+    // ================= 创建按钮 =================
+
     private Button makeButton(String text) {
         Button b = new Button(this);
         b.setText(text);
         b.setAllCaps(false);
         return b;
     }
+
+    // ================= 移动控制栏 =================
+
     private void toggleBarPosition() {
 
-        if (bottomBar == null || content == null) return;
-
-        content.removeView(bottomBar);
+        if (bottomBar == null || content == null || root == null) {
+            return;
+        }
 
         if (!barMoved) {
 
-          // 移动到网页区域中间
-          FrameLayout.LayoutParams params =
-                new FrameLayout.LayoutParams(
-                        -1,
-                        -2,
-                        Gravity.CENTER
-                );
+            // 从底部容器移除
+            if (bottomBar.getParent() instanceof ViewGroup) {
+                ((ViewGroup) bottomBar.getParent())
+                        .removeView(bottomBar);
+            }
 
-        params.leftMargin = dp(4);
-        params.rightMargin = dp(4);
+            // 移到屏幕中间
+            FrameLayout.LayoutParams params =
+                    new FrameLayout.LayoutParams(
+                            -1,
+                            -2,
+                            Gravity.CENTER
+                    );
 
-        bottomBar.setElevation(dp(12));
+            params.leftMargin = dp(4);
+            params.rightMargin = dp(4);
 
-        root.addView(bottomBar, params);
+            bottomBar.setElevation(dp(12));
 
-        barMoved = true;
+            root.addView(bottomBar, params);
 
-        moveButton.setText("⌄");
+            barMoved = true;
+            moveButton.setText("⌄");
 
-      } else {
+        } else {
 
-        // 移回屏幕底部
-        if (bottomBar.getParent() != null) {
-            ((android.view.ViewGroup) bottomBar.getParent())
-                    .removeView(bottomBar);
+            // 从当前位置移除
+            if (bottomBar.getParent() instanceof ViewGroup) {
+                ((ViewGroup) bottomBar.getParent())
+                        .removeView(bottomBar);
+            }
+
+            // 放回底部
+            bottomBar.setElevation(0);
+
+            content.addView(
+                    bottomBar,
+                    new LinearLayout.LayoutParams(-1, -2)
+            );
+
+            barMoved = false;
+            moveButton.setText("⌕");
         }
-
-      bottomBar.setElevation(0);
-
-        content.addView(
-                bottomBar,
-                new LinearLayout.LayoutParams(-1, -2)
-        );
-
-        barMoved = false;
-
-        moveButton.setText("⌕");
     }
-}
+
     // ================= 主页 =================
 
     private void loadHome() {
@@ -403,7 +406,9 @@ content.addView(
         String url = address.getText()
                 .toString().trim();
 
-        if (url.isEmpty()) return;
+        if (url.isEmpty()) {
+            return;
+        }
 
         if (!url.contains("://")) {
 
@@ -430,18 +435,22 @@ content.addView(
         }
 
         address.clearFocus();
+
+        // 如果控制栏在中间，打开网页后放回底部
+        if (barMoved) {
+            toggleBarPosition();
+        }
     }
-    if (barMoved) {
-        toggleBarPosition();
-     }
+
     // ================= 退出视频全屏 =================
 
     private void hideCustomView() {
 
-        if (customView == null) return;
+        if (customView == null) {
+            return;
+        }
 
         root.removeView(customView);
-
         customView = null;
 
         content.setVisibility(View.VISIBLE);
