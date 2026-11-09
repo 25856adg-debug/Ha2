@@ -1,12 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 网络 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Wi-Fi -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
+    <!-- 蓝牙 -->
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+
+    <!-- 开机启动 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- 亮屏 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- 前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+
+    <!-- 通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- 其他权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
@@ -16,7 +36,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
-        <!-- 启动器首页 -->
+        <!-- 主界面 -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -28,18 +48,18 @@
 
         </activity>
 
-        <!-- 独立浏览器 -->
+        <!-- 浏览器 -->
         <activity
             android:name=".BrowserActivity"
             android:exported="false"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"/>
 
-        <!-- 亮屏权限设置 -->
+        <!-- 设置 -->
         <activity
             android:name=".SettingsActivity"
             android:exported="false"/>
 
-        <!-- 亮屏图案页面 -->
+        <!-- 亮屏图案 -->
         <activity
             android:name=".PatternActivity"
             android:exported="false"/>
@@ -56,7 +76,19 @@
 
         </receiver>
 
-        <!-- 亮屏服务 -->
+        <!-- 定时任务接收器 -->
+        <receiver
+            android:name=".TaskReceiver"
+            android:enabled="true"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="com.example.screenwake.ACTION_TIMER"/>
+            </intent-filter>
+
+        </receiver>
+
+        <!-- 原有亮屏服务 -->
         <service
             android:name=".ScreenWakeService"
             android:enabled="true"
@@ -69,5 +101,14 @@
 
         </service>
 
+        <!-- 新增设备任务服务 -->
+        <service
+            android:name=".CycleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
+
     </application>
+
 </manifest>
+
