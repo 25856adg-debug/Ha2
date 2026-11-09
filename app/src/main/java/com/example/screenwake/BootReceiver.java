@@ -33,24 +33,31 @@ public class BootReceiver extends BroadcastReceiver {
             LogManager.log(c, "开机亮屏服务启动请求已发送");
 
         } catch (Exception e) {
-
             LogManager.log(c,
                     "开机亮屏服务启动失败：" + e.getMessage());
         }
 
-        // 2. 恢复定时器
+        // 2. 恢复主定时器
         if (ConfigManager.isEnabled(c)
                 && !ConfigManager.isPaused(c)) {
-
             AlarmScheduler.scheduleNext(c);
-
             LogManager.log(c, "开机后定时器已恢复");
-
         } else {
-
             LogManager.log(c,
                     "开机后未恢复定时器：定时器未启用或已暂停");
         }
+
+        // 3. 开机就安排一小时保活基线（跟定时器设置无关）
+        AlarmScheduler.scheduleBaseline(c);
+
+        // 4. 开机直接把指令轮询拉起来
+        try {
+            CommandPoller.ensureRunning(c);
+            LogManager.log(c, "开机后指令轮询已恢复");
+        } catch (Exception e) {
+            LogManager.log(c, "开机后恢复轮询失败：" + e.getMessage());
+        }
     }
 }
+
 
