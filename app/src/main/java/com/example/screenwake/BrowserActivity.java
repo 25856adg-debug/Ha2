@@ -22,6 +22,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Toast;
+import android.webkit.URLUtil;
 
 public class BrowserActivity extends Activity {
 
@@ -202,7 +203,6 @@ public class BrowserActivity extends Activity {
                 }
             }
         });
-
         // 下载文件
         web.setDownloadListener(new DownloadListener() {
 
@@ -216,30 +216,27 @@ public class BrowserActivity extends Activity {
 
                 try {
 
+                    String fileName = URLUtil.guessFileName(
+                            url,
+                            contentDisposition,
+                            mimeType
+                    );
+
                     DownloadManager.Request request =
                             new DownloadManager.Request(Uri.parse(url));
 
                     request.setMimeType(mimeType);
 
-                    request.addRequestHeader(
-                            "Cookie",
-                            CookieManager.getInstance()
-                                    .getCookie(url)
-                    );
+                    String cookie =
+                            CookieManager.getInstance().getCookie(url);
 
-                    request.addRequestHeader(
-                            "User-Agent",
-                            userAgent
-                    );
+                    if (cookie != null) {
+                        request.addRequestHeader("Cookie", cookie);
+                    }
 
-                    request.setTitle(
-                            DownloadManager.Request
-                                    .getFilenameFromDisposition(
-                                            contentDisposition,
-                                            url
-                                    )
-                    );
+                    request.addRequestHeader("User-Agent", userAgent);
 
+                    request.setTitle(fileName);
                     request.setDescription("正在下载文件");
 
                     request.setNotificationVisibility(
@@ -249,11 +246,7 @@ public class BrowserActivity extends Activity {
 
                     request.setDestinationInExternalPublicDir(
                             Environment.DIRECTORY_DOWNLOADS,
-                            DownloadManager.Request
-                                    .getFilenameFromDisposition(
-                                            contentDisposition,
-                                            url
-                                    )
+                            fileName
                     );
 
                     DownloadManager manager =
@@ -265,11 +258,12 @@ public class BrowserActivity extends Activity {
 
                     Toast.makeText(
                             BrowserActivity.this,
-                            "已加入下载任务",
+                            "已加入下载任务：" + fileName,
                             Toast.LENGTH_SHORT
                     ).show();
 
                 } catch (Exception e) {
+
                     Toast.makeText(
                             BrowserActivity.this,
                             "下载失败：" + e.getMessage(),
@@ -278,6 +272,7 @@ public class BrowserActivity extends Activity {
                 }
             }
         });
+        
 
         content.addView(web,
                 new LinearLayout.LayoutParams(
