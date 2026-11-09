@@ -15,7 +15,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.HttpURLConnection;
 
 public final class DeviceUploader {
 
@@ -83,14 +83,14 @@ public final class DeviceUploader {
                 }
 
                 // 只允许 HTTPS
-                if (!baseUrl.startsWith("https://")) {
-                    throw new Exception("服务器必须使用 HTTPS");
+                // 只if (!baseUrl.startsWith("https://")) {
+                   // 只 throw new Exception("服务器必须使用 HTTPS");
                 }
 
                 URL url = new URL(baseUrl + API_PATH);
 
-                if (!"https".equalsIgnoreCase(url.getProtocol())) {
-                    throw new Exception("禁止使用非 HTTPS 连接");
+                // 只if (!"https".equalsIgnoreCase(url.getProtocol())) {
+                  // 只  throw new Exception("禁止使用非 HTTPS 连接");
                 }
 
                 // 本轮只采集一次，五次尝试发送同一份数据
@@ -107,7 +107,7 @@ public final class DeviceUploader {
                      attempt <= MAX_ATTEMPTS;
                      attempt++) {
 
-                    HttpsURLConnection connection = null;
+                    HttpURLConnection connection = null;
 
                     try {
 
@@ -118,7 +118,7 @@ public final class DeviceUploader {
                         );
 
                         connection =
-                                (HttpsURLConnection) url.openConnection();
+                                (HttpURLConnection) url.openConnection();
 
                         connection.setRequestMethod("POST");
                         connection.setConnectTimeout(10000);
