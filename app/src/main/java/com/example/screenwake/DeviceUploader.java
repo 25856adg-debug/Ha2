@@ -60,8 +60,8 @@ public final class DeviceUploader {
                         ConfigManager.getServerUrl(app);
 
                 String token =
-                        ConfigManager.getToken(app);
-
+                        ConfigManager.getDeviceToken(app);
+              
                 String deviceId =
                         ConfigManager.getDeviceId(app);
 
@@ -313,3 +313,6 @@ public final class DeviceUploader {
         return RUNNING.get();
     }
 }
+
+
+
