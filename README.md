@@ -7,4 +7,6 @@
 - 悬浮窗权限不等于后台 Activity 启动许可；系统仍可能阻止开机后弹出页面。
 - 屏幕唤醒锁 API 已过时，系统可能忽略。
 - 不会绕过 PIN、图案或密码锁。
+
+- 
 构建：GitHub Actions -> Android CI -> 下载 ScreenWake5-APK artifact。
