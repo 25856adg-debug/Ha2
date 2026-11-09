@@ -10,6 +10,9 @@ import android.provider.MediaStore;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -28,7 +31,8 @@ public final class LogManager {
 
     private LogManager() {}
 
-    private static Uri findFile(Context context) {
+    // Android 10及以上：Music/alarm.log
+    private static Uri findMediaFile(Context context) {
 
         Uri collection = MediaStore.Files.getContentUri("external");
 
@@ -51,7 +55,10 @@ public final class LogManager {
 
             if (cursor != null && cursor.moveToFirst()) {
                 long id = cursor.getLong(0);
-                return Uri.withAppendedPath(collection, String.valueOf(id));
+                return Uri.withAppendedPath(
+                        collection,
+                        String.valueOf(id)
+                );
             }
 
         } catch (Exception ignored) {}
@@ -59,7 +66,7 @@ public final class LogManager {
         return null;
     }
 
-    private static Uri createFile(Context context) throws Exception {
+    private static Uri createMediaFile(Context context) throws Exception {
 
         ContentValues values = new ContentValues();
 
@@ -76,26 +83,72 @@ public final class LogManager {
         );
     }
 
+    // Android 9及以下：应用专属外部目录
+    private static File getLegacyFile(Context context) throws Exception {
+
+        File dir = context.getExternalFilesDir(
+                Environment.DIRECTORY_DOCUMENTS
+        );
+
+        if (dir == null) {
+            throw new Exception("外部存储目录不可用");
+        }
+
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new Exception("无法创建日志目录");
+        }
+
+        return new File(dir, FILE_NAME);
+    }
+
     private static List<String> readLines(Context context) {
 
         List<String> lines = new ArrayList<>();
 
-        Uri uri = findFile(context);
+        try {
 
-        if (uri == null) return lines;
+            InputStream input;
 
-        try (InputStream in =
-                     context.getContentResolver().openInputStream(uri);
-             BufferedReader reader = new BufferedReader(
-                     new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            if (Build.VERSION.SDK_INT >= 29) {
 
-            String line;
+                Uri uri = findMediaFile(context);
 
-            while ((line = reader.readLine()) != null) {
-                lines.add(line);
+                if (uri == null) return lines;
+
+                input = context.getContentResolver()
+                        .openInputStream(uri);
+
+            } else {
+
+                File file = getLegacyFile(context);
+
+                if (!file.exists()) return lines;
+
+                input = new FileInputStream(file);
             }
 
-        } catch (Exception ignored) {}
+            if (input == null) return lines;
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            input,
+                            StandardCharsets.UTF_8
+                    ))) {
+
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+                    lines.add(line);
+                }
+            }
+
+        } catch (Exception e) {
+            android.util.Log.e(
+                    "ScreenWake",
+                    "读取日志失败",
+                    e
+            );
+        }
 
         return lines;
     }
@@ -105,20 +158,39 @@ public final class LogManager {
             List<String> lines
     ) throws Exception {
 
-        Uri uri = findFile(context);
+        OutputStream output;
 
-        if (uri == null) {
-            uri = createFile(context);
+        if (Build.VERSION.SDK_INT >= 29) {
+
+            Uri uri = findMediaFile(context);
+
+            if (uri == null) {
+                uri = createMediaFile(context);
+            }
+
+            if (uri == null) {
+                throw new Exception("无法创建日志文件");
+            }
+
+            output = context.getContentResolver()
+                    .openOutputStream(uri, "wt");
+
+        } else {
+
+            File file = getLegacyFile(context);
+
+            output = new FileOutputStream(file, false);
         }
 
-        if (uri == null) {
-            throw new Exception("无法创建日志文件");
+        if (output == null) {
+            throw new Exception("无法打开日志文件");
         }
 
-        try (OutputStream out =
-                     context.getContentResolver().openOutputStream(uri, "wt");
-             BufferedWriter writer = new BufferedWriter(
-                     new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(
+                        output,
+                        StandardCharsets.UTF_8
+                ))) {
 
             for (String line : lines) {
                 writer.write(line);
@@ -127,6 +199,7 @@ public final class LogManager {
         }
     }
 
+    // 写入日志，最多保留最后500行
     public static synchronized void log(
             Context context,
             String message
@@ -145,8 +218,10 @@ public final class LogManager {
                     Locale.getDefault()
             ).format(new Date(now));
 
-            lines.add(now + " | " + time + " | " +
-                    message.replace("\n", " "));
+            lines.add(
+                    now + " | " + time + " | "
+                            + message.replace("\n", " ")
+            );
 
             while (lines.size() > MAX_LINES) {
                 lines.remove(0);
@@ -155,6 +230,7 @@ public final class LogManager {
             writeAll(context, lines);
 
         } catch (Exception e) {
+
             android.util.Log.e(
                     "ScreenWake",
                     "日志写入失败",
@@ -180,3 +256,4 @@ public final class LogManager {
         return readLines(context).size();
     }
 }
+
