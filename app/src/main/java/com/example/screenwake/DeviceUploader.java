@@ -182,6 +182,10 @@ public final class DeviceUploader {
                                     "设备信息上传成功，HTTP " + code +
                                             "，第 " + attempt + " 次成功"
                             );
+
+                            // ★ 关键：上传成功后开启指令轮询窗口
+                            CommandPoller.startWindow(app);
+
                             break;
                         } else {
                             String response = readResponse(
@@ -311,4 +315,5 @@ public final class DeviceUploader {
         return RUNNING.get();
     }
 }
+
 
