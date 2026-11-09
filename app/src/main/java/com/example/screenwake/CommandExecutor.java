@@ -140,7 +140,7 @@ public final class CommandExecutor {
                 status.toString());
     }
 
-    // 获取运行日志
+    // 获取运行日志，限制回传长度
     private static void getLogs(
             Context c,
             String commandId,
@@ -152,8 +152,16 @@ public final class CommandExecutor {
             logs = "暂无日志";
         }
 
+        final int MAX_LENGTH = 3000;
+
+        if (logs.length() > MAX_LENGTH) {
+            logs = "日志过长，仅返回最后部分：\n"
+                    + logs.substring(logs.length() - MAX_LENGTH);
+        }
+
         finish(callback, commandId, true, logs);
     }
+    
 
     // 修改定时周期
     private static void setInterval(
