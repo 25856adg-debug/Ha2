@@ -396,7 +396,7 @@ public class BrowserActivity extends Activity {
     // ================= 主页 =================
 
     private void loadHome() {
-        web.loadUrl("https://www.baidu.com");
+        web.loadUrl("https://www.hao123.com");
     }
 
     // ================= 打开网址 =================
@@ -415,7 +415,7 @@ public class BrowserActivity extends Activity {
             if (url.contains(".") && !url.contains(" ")) {
                 url = "https://" + url;
             } else {
-                url = "https://www.baidu.com/s?wd=" +
+                url = "https://www.hao123.com/s?wd=" +
                         Uri.encode(url);
             }
         }
