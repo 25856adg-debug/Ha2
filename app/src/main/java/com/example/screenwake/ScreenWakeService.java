@@ -40,7 +40,7 @@ public class ScreenWakeService extends Service {
             n = new Notification.Builder(this,"screenwake")
                 .setContentTitle("ScreenWake")
                 .setContentText("正在尝试执行开机亮屏")
-                .setSmallIcon(android.R.drawable.ic_lock_idle_wake)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
                 .build();
 
@@ -49,7 +49,7 @@ public class ScreenWakeService extends Service {
             n = new Notification.Builder(this)
                 .setContentTitle("ScreenWake")
                 .setContentText("正在尝试执行开机亮屏")
-                .setSmallIcon(android.R.drawable.ic_lock_idle_wake)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
                 .build();
         }
