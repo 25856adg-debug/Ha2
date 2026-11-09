@@ -355,7 +355,7 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(20),dp(8),dp(20),dp(8));
 
         EditText server = new EditText(this);
-        server.setHint("HTTPS服务器地址，例如 https://example.com");
+        server.setHint("服务器地址，例如 http://1.2.3.4:3357");
         server.setSingleLine(true);
         server.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_URI);
@@ -373,7 +373,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("服务器配置")
-            .setMessage("请填写你自己的 HTTPS 地址和设备Token")
+            .setMessage("请填写服务器地址（http/https 均可）和设备Token")
             .setView(layout)
             .setNegativeButton("取消",null)
             .setPositiveButton("保存",(dialog,which) -> {
@@ -381,9 +381,12 @@ public class MainActivity extends Activity {
                 String url = server.getText().toString().trim();
                 String key = token.getText().toString().trim();
 
-                if (!url.startsWith("https://")
-                        || key.isEmpty()) {
-                    toast("请填写有效的HTTPS地址和Token");
+                // 只要求非空，且必须以 http:// 或 https:// 开头
+                if (url.isEmpty()
+                        || key.isEmpty()
+                        || !(url.startsWith("http://")
+                            || url.startsWith("https://"))) {
+                    toast("请填写有效的服务器地址（http 或 https）和Token");
                     return;
                 }
 
