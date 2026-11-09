@@ -20,6 +20,9 @@
             android:exported="false"/>
         <activity
             android:name=".BrowserActivity"
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"/>
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
             android:exported="true"/>
     
