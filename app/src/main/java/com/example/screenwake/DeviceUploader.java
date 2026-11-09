@@ -85,15 +85,13 @@ public final class DeviceUploader {
                 // 只允许 HTTPS
                 // 只if (!baseUrl.startsWith("https://")) {
                    // 只 throw new Exception("服务器必须使用 HTTPS");
-                }
 
                 URL url = new URL(baseUrl + API_PATH);
 
                 // 只if (!"https".equalsIgnoreCase(url.getProtocol())) {
                   // 只  throw new Exception("禁止使用非 HTTPS 连接");
-                }
-
-                // 本轮只采集一次，五次尝试发送同一份数据
+                
+                 // 本轮只采集一次，五次尝试发送同一份数据
                 JSONObject payload = DeviceInfo.collect(app);
 
                 payload.put("device_id", deviceId);
