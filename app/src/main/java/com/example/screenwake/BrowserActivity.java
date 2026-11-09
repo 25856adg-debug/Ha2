@@ -8,7 +8,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
@@ -50,6 +52,11 @@ public class BrowserActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
+        // 键盘弹出时自动调整页面高度
+        getWindow().setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        );
+
         buildBrowser();
         loadHome();
     }
@@ -62,16 +69,25 @@ public class BrowserActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setBackgroundColor(Color.WHITE);
 
-        // 网页区域：占据上方剩余空间
+        // ================= 网页区域 =================
+
         web = new WebView(this);
 
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setDatabaseEnabled(true);
+
+        // 网页缩放
         web.getSettings().setSupportZoom(true);
         web.getSettings().setBuiltInZoomControls(true);
         web.getSettings().setDisplayZoomControls(false);
+
         web.getSettings().setAllowFileAccess(true);
+
+        // 支持网页文字选择、复制
+        web.setLongClickable(true);
+        web.setHapticFeedbackEnabled(true);
+        web.setTextSelectionEnabled(true);
 
         web.setWebViewClient(new WebViewClient() {
 
@@ -84,8 +100,12 @@ public class BrowserActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                address.setText(url);
-                address.setSelection(address.getText().length());
+                if (address != null && url != null) {
+                    address.setText(url);
+                    address.setSelection(
+                            address.getText().length()
+                    );
+                }
             }
         });
 
@@ -138,29 +158,20 @@ public class BrowserActivity extends Activity {
 
                 content.setVisibility(View.GONE);
 
-                root.addView(customView,
-                        new FrameLayout.LayoutParams(-1, -1));
+                root.addView(
+                        customView,
+                        new FrameLayout.LayoutParams(-1, -1)
+                );
             }
 
             @Override
             public void onHideCustomView() {
-
-                if (customView == null) return;
-
-                root.removeView(customView);
-
-                customView = null;
-
-                content.setVisibility(View.VISIBLE);
-
-                if (customCallback != null) {
-                    customCallback.onCustomViewHidden();
-                    customCallback = null;
-                }
+                hideCustomView();
             }
         });
 
-        // 下载文件
+        // ================= 下载功能 =================
+
         web.setDownloadListener(new DownloadListener() {
 
             @Override
@@ -230,20 +241,21 @@ public class BrowserActivity extends Activity {
             }
         });
 
-        content.addView(web,
-                new LinearLayout.LayoutParams(-1, 0, 1));
+        // 网页占据上方剩余空间
+        content.addView(
+                web,
+                new LinearLayout.LayoutParams(-1, 0, 1)
+        );
 
-        // 底部固定控制区
+        // ================= 底部控制栏 =================
+
         bottomBar = new LinearLayout(this);
-        bottomBar.setOrientation(LinearLayout.VERTICAL);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
         bottomBar.setPadding(dp(5), dp(4), dp(5), dp(4));
         bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
 
-        // 第一行：网址输入框 + 打开按钮
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        row1.setGravity(Gravity.CENTER_VERTICAL);
-
+        // 地址输入框
         address = new EditText(this);
         address.setSingleLine(true);
         address.setTextSize(14);
@@ -251,44 +263,65 @@ public class BrowserActivity extends Activity {
         address.setSelectAllOnFocus(true);
         address.setImeOptions(EditorInfo.IME_ACTION_GO);
 
-        row1.addView(address,
-                new LinearLayout.LayoutParams(0, dp(48), 1));
+        bottomBar.addView(
+                address,
+                new LinearLayout.LayoutParams(0, dp(48), 1)
+        );
 
+        // 打开按钮
         Button go = makeButton("打开");
 
-        row1.addView(go,
-                new LinearLayout.LayoutParams(dp(76), dp(48)));
+        bottomBar.addView(
+                go,
+                new LinearLayout.LayoutParams(dp(65), dp(48))
+        );
 
         go.setOnClickListener(v -> loadAddress());
 
-        // 键盘回车 / 前往键打开网址
-        address.setOnEditorActionListener((v, actionId, event) -> {
-            loadAddress();
-            return true;
-        });
-
-        bottomBar.addView(row1);
-
-        // 第二行：只保留刷新按钮
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        row2.setGravity(Gravity.CENTER);
-
+        // 刷新按钮
         Button refresh = makeButton("刷新");
 
-        row2.addView(refresh,
-                new LinearLayout.LayoutParams(-1, dp(42)));
+        bottomBar.addView(
+                refresh,
+                new LinearLayout.LayoutParams(dp(65), dp(48))
+        );
 
         refresh.setOnClickListener(v -> web.reload());
 
-        bottomBar.addView(row2);
+        // 键盘回车 / 前往键打开网址
+        address.setOnEditorActionListener(
+                (v, actionId, event) -> {
 
-        // 内容在上，底栏在下
-        content.addView(bottomBar,
-                new LinearLayout.LayoutParams(-1, -2));
+                    if (event != null &&
+                            event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
+                            event.getAction() == KeyEvent.ACTION_DOWN) {
 
-        root.addView(content,
-                new FrameLayout.LayoutParams(-1, -1));
+                        loadAddress();
+                        return true;
+                    }
+
+                    if (actionId == EditorInfo.IME_ACTION_GO ||
+                            actionId == EditorInfo.IME_ACTION_DONE ||
+                            actionId == EditorInfo.IME_ACTION_SEARCH) {
+
+                        loadAddress();
+                        return true;
+                    }
+
+                    return false;
+                }
+        );
+
+        // 控制栏固定在网页下方
+        content.addView(
+                bottomBar,
+                new LinearLayout.LayoutParams(-1, -2)
+        );
+
+        root.addView(
+                content,
+                new FrameLayout.LayoutParams(-1, -1)
+        );
 
         setContentView(root);
     }
@@ -300,9 +333,13 @@ public class BrowserActivity extends Activity {
         return b;
     }
 
+    // ================= 主页 =================
+
     private void loadHome() {
         web.loadUrl("https://www.baidu.com");
     }
+
+    // ================= 打开网址 =================
 
     private void loadAddress() {
 
@@ -331,11 +368,35 @@ public class BrowserActivity extends Activity {
 
         if (imm != null) {
             imm.hideSoftInputFromWindow(
-                    address.getWindowToken(), 0);
+                    address.getWindowToken(), 0
+            );
         }
 
         address.clearFocus();
     }
+
+    // ================= 退出视频全屏 =================
+
+    private void hideCustomView() {
+
+        if (customView == null) return;
+
+        root.removeView(customView);
+
+        customView = null;
+
+        content.setVisibility(View.VISIBLE);
+
+        if (customCallback != null) {
+            WebChromeClient.CustomViewCallback callback =
+                    customCallback;
+
+            customCallback = null;
+            callback.onCustomViewHidden();
+        }
+    }
+
+    // ================= 文件上传返回 =================
 
     @Override
     protected void onActivityResult(
@@ -381,18 +442,13 @@ public class BrowserActivity extends Activity {
         }
     }
 
+    // ================= 手机返回键 =================
+
     @Override
     public void onBackPressed() {
 
         if (customView != null) {
-
-            if (web != null) {
-                web.evaluateJavascript(
-                        "document.exitFullscreen && document.exitFullscreen()",
-                        null
-                );
-            }
-
+            hideCustomView();
             return;
         }
 
@@ -403,6 +459,8 @@ public class BrowserActivity extends Activity {
 
         super.onBackPressed();
     }
+
+    // ================= 销毁 =================
 
     @Override
     protected void onDestroy() {
@@ -415,9 +473,12 @@ public class BrowserActivity extends Activity {
         if (web != null) {
             web.stopLoading();
             web.destroy();
+            web = null;
         }
 
         super.onDestroy();
     }
 }
+
+
 
