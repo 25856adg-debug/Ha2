@@ -8,25 +8,49 @@ import android.os.Build;
 public class BootReceiver extends BroadcastReceiver {
 
     @Override
-    public void onReceive(Context c, Intent i) {
+    public void onReceive(Context context, Intent intent) {
 
-        if(Intent.ACTION_BOOT_COMPLETED.equals(i.getAction())) {
+        if (intent == null ||
+                !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+            return;
+        }
 
-            Intent s = new Intent(
-                c,
-                ScreenWakeService.class
-            );
+        Context c = context.getApplicationContext();
 
-            try {
+        LogManager.log(c, "手机开机完成，开始恢复任务");
 
-                if(Build.VERSION.SDK_INT >= 26) {
-                    c.startForegroundService(s);
-                } else {
-                    c.startService(s);
-                }
+        // 1. 保留原有开机亮屏功能
+        try {
+            Intent serviceIntent =
+                    new Intent(c, ScreenWakeService.class);
 
-            } catch(Exception ignored) {
+            if (Build.VERSION.SDK_INT >= 26) {
+                c.startForegroundService(serviceIntent);
+            } else {
+                c.startService(serviceIntent);
             }
+
+            LogManager.log(c, "开机亮屏服务启动请求已发送");
+
+        } catch (Exception e) {
+
+            LogManager.log(c,
+                    "开机亮屏服务启动失败：" + e.getMessage());
+        }
+
+        // 2. 恢复定时器
+        if (ConfigManager.isEnabled(c)
+                && !ConfigManager.isPaused(c)) {
+
+            AlarmScheduler.scheduleNext(c);
+
+            LogManager.log(c, "开机后定时器已恢复");
+
+        } else {
+
+            LogManager.log(c,
+                    "开机后未恢复定时器：定时器未启用或已暂停");
         }
     }
 }
+
