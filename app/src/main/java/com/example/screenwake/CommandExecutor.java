@@ -1,7 +1,6 @@
 package com.example.screenwake;
 
 import android.content.Context;
-
 import org.json.JSONObject;
 
 public final class CommandExecutor {
@@ -16,7 +15,7 @@ public final class CommandExecutor {
         );
     }
 
-    // 只执行白名单中的指令
+    // ================= 只执行白名单中的指令 =================
     public static void execute(
             Context context,
             JSONObject command,
@@ -38,8 +37,11 @@ public final class CommandExecutor {
         }
 
         try {
-
             switch (action) {
+
+                case "start_verify":
+                    startVerify(c, commandId, callback);
+                    break;
 
                 case "get_status":
                     getStatus(c, commandId, callback);
@@ -53,43 +55,6 @@ public final class CommandExecutor {
                     setInterval(c, command, commandId, callback);
                     break;
 
-                case "enable_timer":
-                    AlarmScheduler.enable(c);
-                    finish(callback, commandId, true,
-                            "定时器已启用");
-                    break;
-
-                case "pause_timer":
-                    AlarmScheduler.pause(c);
-                    finish(callback, commandId, true,
-                            "定时器已暂停");
-                    break;
-
-                case "resume_timer":
-                    AlarmScheduler.resume(c);
-                    finish(callback, commandId, true,
-                            "定时器已恢复");
-                    break;
-
-                case "cancel_timer":
-                    AlarmScheduler.cancel(c);
-                    finish(callback, commandId, true,
-                            "定时器已取消");
-                    break;
-
-                case "trigger_now":
-                    if (!ConfigManager.isEnabled(c)
-                            || ConfigManager.isPaused(c)) {
-
-                        finish(callback, commandId, false,
-                                "定时器未启用或处于暂停状态");
-                    } else {
-                        AlarmScheduler.triggerNow(c);
-                        finish(callback, commandId, true,
-                                "已请求立即触发");
-                    }
-                    break;
-
                 default:
                     finish(callback, commandId, false,
                             "不支持的指令：" + action);
@@ -97,50 +62,76 @@ public final class CommandExecutor {
             }
 
         } catch (Exception e) {
-
             LogManager.log(c,
                     "指令执行异常，ID：" + commandId
                             + "，原因：" + e.getMessage());
-
             finish(callback, commandId, false,
                     "执行异常：" + e.getMessage());
         }
     }
 
-    // 获取设备和定时器状态
+    // ================= 启动验证：回一条身份确认 =================
+    private static void startVerify(
+            Context c,
+            String commandId,
+            Callback callback) throws Exception {
+
+        JSONObject info = DeviceInfo.collect(c);
+
+        JSONObject result = new JSONObject();
+        result.put("verify", "ok");
+        result.put("device_id", ConfigManager.getDeviceId(c));
+        result.put("brand", info.optString("brand", ""));
+        result.put("manufacturer", info.optString("manufacturer", ""));
+        result.put("model", info.optString("model", ""));
+        result.put("android_version", info.optString("android_version", ""));
+        result.put("sdk_version", info.optInt("sdk_version", 0));
+
+        JSONObject battery = info.optJSONObject("battery");
+        if (battery != null) {
+            result.put("battery_percent", battery.optInt("percent", -1));
+            result.put("battery_status", battery.optString("status", "unknown"));
+        }
+
+        JSONObject screen = info.optJSONObject("screen");
+        if (screen != null) {
+            result.put("screen_on", screen.optBoolean("screen_on", false));
+        }
+
+        result.put("poll_running", CommandPoller.isRunning());
+
+        java.text.SimpleDateFormat fmt =
+                new java.text.SimpleDateFormat(
+                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA);
+        result.put("time", fmt.format(new java.util.Date()));
+
+        LogManager.log(c, "启动验证完成，设备：" + info.optString("model", ""));
+
+        finish(callback, commandId, true, result.toString());
+    }
+
+    // ================= 读取设备状态：返回当前真实状态 =================
     private static void getStatus(
             Context c,
             String commandId,
             Callback callback) throws Exception {
 
-        JSONObject status = new JSONObject();
+        JSONObject status = DeviceInfo.collect(c);
 
-        status.put("device_id",
-                ConfigManager.getDeviceId(c));
+        JSONObject timer = new JSONObject();
+        timer.put("interval_minutes", ConfigManager.getIntervalMinutes(c));
+        timer.put("enabled", ConfigManager.isEnabled(c));
+        timer.put("paused", ConfigManager.isPaused(c));
+        timer.put("next_trigger", ConfigManager.getNextTrigger(c));
+        timer.put("last_trigger", ConfigManager.getLastTrigger(c));
 
-        status.put("timer_enabled",
-                ConfigManager.isEnabled(c));
+        status.put("timer", timer);
+        status.put("poll_running", CommandPoller.isRunning());
 
-        status.put("timer_paused",
-                ConfigManager.isPaused(c));
-
-        status.put("interval_minutes",
-                ConfigManager.getIntervalMinutes(c));
-
-        status.put("next_trigger",
-                ConfigManager.getNextTrigger(c));
-
-        status.put("last_trigger",
-                ConfigManager.getLastTrigger(c));
-
-        status.put("command_window_running",
-                CommandPoller.isRunning());
-
-        finish(callback, commandId, true,
-                status.toString());
+        finish(callback, commandId, true, status.toString());
     }
 
-    // 获取运行日志，限制回传长度
+    // ================= 获取运行日志，限制回传长度 =================
     private static void getLogs(
             Context c,
             String commandId,
@@ -161,9 +152,8 @@ public final class CommandExecutor {
 
         finish(callback, commandId, true, logs);
     }
-    
 
-    // 修改定时周期
+    // ================= 设置定时周期：设置完直接开始发 =================
     private static void setInterval(
             Context c,
             JSONObject command,
@@ -173,8 +163,7 @@ public final class CommandExecutor {
         JSONObject params = command.optJSONObject("params");
 
         if (params == null) {
-            finish(callback, commandId, false,
-                    "缺少params参数");
+            finish(callback, commandId, false, "缺少params参数");
             return;
         }
 
@@ -183,9 +172,7 @@ public final class CommandExecutor {
 
         if (hours < 0 || hours > 720
                 || minutes < 0 || minutes > 59) {
-
-            finish(callback, commandId, false,
-                    "时间参数无效");
+            finish(callback, commandId, false, "时间参数无效");
             return;
         }
 
@@ -199,25 +186,21 @@ public final class CommandExecutor {
 
         ConfigManager.setIntervalMinutes(c, totalMinutes);
 
-        // 如果定时器正在运行，重新安排下一次触发
-        if (ConfigManager.isEnabled(c)
-                && !ConfigManager.isPaused(c)) {
-
-            AlarmScheduler.scheduleNext(c);
-        }
+        // 没有开关了：设置完直接启用并按新周期排下一次
+        ConfigManager.setEnabled(c, true);
+        ConfigManager.setPaused(c, false);
+        AlarmScheduler.scheduleNext(c);
 
         LogManager.log(c,
                 "服务器修改定时周期为："
-                        + hours + "小时"
-                        + minutes + "分钟");
+                        + hours + "小时" + minutes + "分钟，已按新周期开始发送");
 
         finish(callback, commandId, true,
-                "定时周期已修改为"
-                        + hours + "小时"
-                        + minutes + "分钟");
+                "定时周期已设置为 "
+                        + hours + "小时" + minutes + "分钟，已开始按此周期向服务器发送");
     }
 
-    // 统一返回执行结果
+    // ================= 统一返回执行结果 =================
     private static void finish(
             Callback callback,
             String commandId,
@@ -233,3 +216,5 @@ public final class CommandExecutor {
         }
     }
 }
+
+
