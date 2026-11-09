@@ -15,7 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class BrowserActivity extends Activity {
+public class SettingsActivity extends Activity {
     private LinearLayout root;
     private TextView status;
 
