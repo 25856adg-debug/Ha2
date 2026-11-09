@@ -19,13 +19,16 @@ public class TaskReceiver extends BroadcastReceiver {
         if (!ConfigManager.isEnabled(c) ||
                 ConfigManager.isPaused(c)) {
 
-            LogManager.log(c, "收到定时广播，但定时器未启用或已暂停");
+            LogManager.log(c,
+                    "收到定时广播，但定时器未启用或已暂停");
             return;
         }
 
+        // 防止上一轮上传尚未完成时重复触发
         if (DeviceUploader.isRunning()) {
-            LogManager.log(c, "上一轮上传仍在运行，本次触发跳过");
-            AlarmScheduler.scheduleNext(c);
+
+            LogManager.log(c,
+                    "上一轮上传仍在运行，本次重复触发已忽略");
             return;
         }
 
@@ -46,10 +49,10 @@ public class TaskReceiver extends BroadcastReceiver {
                         + "，计划时间：" + planned
                         + "，延迟分钟：" + delayMinutes);
 
-        // 启动前台服务，托管本轮任务
+        // 启动前台服务
         CycleService.start(c);
 
-        // 开始上传设备信息
+        // 上传设备信息，最多尝试五次
         DeviceUploader.send(c,
                 new DeviceUploader.Callback() {
 
@@ -63,11 +66,27 @@ public class TaskReceiver extends BroadcastReceiver {
                                         + (success ? "成功" : "失败")
                                         + "，信息：" + message);
 
-                        // 上传结束后开启一小时指令窗口
-                        CommandPoller.startWindow(c);
+                        try {
 
-                        // 安排下一轮定时任务
-                        AlarmScheduler.scheduleNext(c);
+                            // 上传成功或五次失败后，都开启一小时指令窗口
+                            CommandPoller.startWindow(c);
+
+                        } catch (Exception e) {
+
+                            LogManager.log(c,
+                                    "启动指令窗口异常：" + e.getMessage());
+                        }
+
+                        try {
+
+                            // 安排下一轮定时任务
+                            AlarmScheduler.scheduleNext(c);
+
+                        } catch (Exception e) {
+
+                            LogManager.log(c,
+                                    "安排下一轮任务异常：" + e.getMessage());
+                        }
                     }
                 });
     }
