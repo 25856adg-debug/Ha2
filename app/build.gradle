@@ -7,10 +7,10 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.example.screenwake.sjlfj'
+        applicationId 'com.example.screenwake.lfj'
         minSdk 23
         targetSdk 35
         versionCode 3
-        versionName '7.6.2'
+        versionName '2.6.2'
     }
 }
