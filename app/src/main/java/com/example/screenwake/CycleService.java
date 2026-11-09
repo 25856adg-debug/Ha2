@@ -22,35 +22,27 @@ public class CycleService extends Service {
     private static final String CHANNEL_ID = "screenwake_cycle";
     private static final int NOTIFICATION_ID = 402;
 
-    private boolean started = false;
-
     public static void start(Context context) {
-        Context c = context.getApplicationContext();
-
-        Intent intent = new Intent(c, CycleService.class);
+        Intent intent = new Intent(context, CycleService.class);
         intent.setAction(ACTION_START);
 
         try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                c.startForegroundService(intent);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
             } else {
-                c.startService(intent);
+                context.startService(intent);
             }
         } catch (Exception e) {
-            LogManager.log(c,
-                    "启动任务前台服务失败：" + e.getMessage());
+            LogManager.log(context, "启动循环服务失败：" + e.getMessage());
         }
     }
 
     public static void stop(Context context) {
-        Context c = context.getApplicationContext();
-
         try {
-            // 不再使用后台 startService() 发送停止命令
-            c.stopService(new Intent(c, CycleService.class));
+            Intent intent = new Intent(context, CycleService.class);
+            context.stopService(intent);
         } catch (Exception e) {
-            LogManager.log(c,
-                    "停止任务前台服务失败：" + e.getMessage());
+            LogManager.log(context, "停止循环服务失败：" + e.getMessage());
         }
     }
 
@@ -63,62 +55,55 @@ public class CycleService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
-        if (intent != null &&
-                ACTION_STOP.equals(intent.getAction())) {
-
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        if (!started) {
-            try {
-                Notification notification = buildNotification();
+        try {
+            Notification notification = buildNotification();
 
-                if (Build.VERSION.SDK_INT >= 29) {
-                    startForeground(
-                            NOTIFICATION_ID,
-                            notification,
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    );
-                } else {
-                    startForeground(
-                            NOTIFICATION_ID,
-                            notification
-                    );
-                }
-
-                started = true;
-
-                LogManager.log(this, "任务前台服务已启动");
-
-            } catch (Exception e) {
-
-                LogManager.log(this,
-                        "前台服务启动失败：" + e.getMessage());
-
-                stopSelf();
-                return START_NOT_STICKY;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                );
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
             }
+
+        } catch (Exception e) {
+            LogManager.log(this, "前台服务启动失败：" + e.getMessage());
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
-        return START_NOT_STICKY;
+        // 检查是否存在尚未结束的一小时指令窗口
+        long savedDeadline = ConfigManager.getCommandWindowEnd(this);
+
+        if (savedDeadline > 0) {
+            CommandPoller.restoreWindow(this);
+        }
+
+        LogManager.log(this, "循环服务运行中");
+
+        // 允许系统在服务被回收后尝试重新创建
+        return START_STICKY;
     }
 
     private void createNotificationChannel() {
 
-        if (Build.VERSION.SDK_INT >= 26) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 
-            NotificationChannel channel =
-                    new NotificationChannel(
-                            CHANNEL_ID,
-                            "设备任务运行状态",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-
-            channel.setDescription(
-                    "显示设备信息上传和指令接收任务状态"
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "设备指令接收服务",
+                    NotificationManager.IMPORTANCE_LOW
             );
+
+            channel.setDescription("保持设备指令接收窗口运行");
 
             NotificationManager manager =
                     getSystemService(NotificationManager.class);
@@ -135,7 +120,7 @@ public class CycleService extends Service {
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,
-                NOTIFICATION_ID,
+                402,
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT
                         | PendingIntent.FLAG_IMMUTABLE
@@ -143,28 +128,24 @@ public class CycleService extends Service {
 
         Notification.Builder builder;
 
-        if (Build.VERSION.SDK_INT >= 26) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder = new Notification.Builder(this, CHANNEL_ID);
         } else {
             builder = new Notification.Builder(this);
         }
 
         return builder
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("ScreenWake 正在运行")
-                .setContentText("设备信息上传与指令接收运行中")
-                .setContentIntent(pendingIntent)
+                .setContentTitle("ScreenWake 设备服务")
+                .setContentText("设备定时任务与指令接收服务运行中")
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
                 .setOngoing(true)
-                .setShowWhen(true)
+                .setContentIntent(pendingIntent)
                 .build();
     }
 
     @Override
     public void onDestroy() {
-        started = false;
-
-        LogManager.log(this, "任务前台服务已停止");
-
+        LogManager.log(this, "循环服务已结束");
         super.onDestroy();
     }
 
@@ -173,5 +154,3 @@ public class CycleService extends Service {
         return null;
     }
 }
-
-
