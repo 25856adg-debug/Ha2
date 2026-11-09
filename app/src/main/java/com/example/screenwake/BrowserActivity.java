@@ -87,7 +87,6 @@ public class BrowserActivity extends Activity {
         // 支持网页文字选择、复制
         web.setLongClickable(true);
         web.setHapticFeedbackEnabled(true);
-        web.setTextSelectionEnabled(true);
 
         web.setWebViewClient(new WebViewClient() {
 
