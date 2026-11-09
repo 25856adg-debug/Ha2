@@ -32,7 +32,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="启动器"
+        android:label="测试"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
