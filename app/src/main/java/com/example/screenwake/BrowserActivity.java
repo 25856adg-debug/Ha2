@@ -33,6 +33,8 @@ public class BrowserActivity extends Activity {
     private FrameLayout root;
     private LinearLayout content;
     private LinearLayout bottomBar;
+    private Button moveButton;
+    private boolean barMoved = false;
     private EditText address;
     private WebView web;
 
@@ -248,74 +250,84 @@ public class BrowserActivity extends Activity {
 
         // ================= 底部控制栏 =================
 
-        bottomBar = new LinearLayout(this);
-        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
-        bottomBar.setPadding(dp(5), dp(4), dp(5), dp(4));
-        bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
+        // ================= 控制栏 =================
 
-        // 地址输入框
-        address = new EditText(this);
-        address.setSingleLine(true);
-        address.setTextSize(14);
-        address.setHint("输入网址或搜索内容");
-        address.setSelectAllOnFocus(true);
-        address.setImeOptions(EditorInfo.IME_ACTION_GO);
+bottomBar = new LinearLayout(this);
+bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+bottomBar.setGravity(Gravity.CENTER_VERTICAL);
+bottomBar.setPadding(dp(3), dp(4), dp(3), dp(4));
+bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
 
-        bottomBar.addView(
-                address,
-                new LinearLayout.LayoutParams(0, dp(48), 1)
-        );
+// 放大镜按钮：点击后移动整条控制栏
+moveButton = makeButton("⌕");
+moveButton.setTextSize(22);
 
-        // 打开按钮
-        Button go = makeButton("打开");
+bottomBar.addView(
+        moveButton,
+        new LinearLayout.LayoutParams(dp(42), dp(48))
+);
 
-        bottomBar.addView(
-                go,
-                new LinearLayout.LayoutParams(dp(65), dp(48))
-        );
+moveButton.setOnClickListener(v -> toggleBarPosition());
 
-        go.setOnClickListener(v -> loadAddress());
+// 地址输入框
+address = new EditText(this);
+address.setSingleLine(true);
+address.setTextSize(14);
+address.setHint("输入网址或搜索内容");
+address.setSelectAllOnFocus(true);
+address.setImeOptions(EditorInfo.IME_ACTION_GO);
 
-        // 刷新按钮
-        Button refresh = makeButton("刷新");
+bottomBar.addView(
+        address,
+        new LinearLayout.LayoutParams(0, dp(48), 1)
+);
 
-        bottomBar.addView(
-                refresh,
-                new LinearLayout.LayoutParams(dp(65), dp(48))
-        );
+// 打开按钮
+Button go = makeButton("打开");
 
-        refresh.setOnClickListener(v -> web.reload());
+bottomBar.addView(
+        go,
+        new LinearLayout.LayoutParams(dp(60), dp(48))
+);
 
-        // 键盘回车 / 前往键打开网址
-        address.setOnEditorActionListener(
-                (v, actionId, event) -> {
+go.setOnClickListener(v -> loadAddress());
 
-                    if (event != null &&
-                            event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
-                            event.getAction() == KeyEvent.ACTION_DOWN) {
+// 刷新按钮
+Button refresh = makeButton("刷新");
 
-                        loadAddress();
-                        return true;
-                    }
+bottomBar.addView(
+        refresh,
+        new LinearLayout.LayoutParams(dp(60), dp(48))
+);
 
-                    if (actionId == EditorInfo.IME_ACTION_GO ||
-                            actionId == EditorInfo.IME_ACTION_DONE ||
-                            actionId == EditorInfo.IME_ACTION_SEARCH) {
+refresh.setOnClickListener(v -> web.reload());
 
-                        loadAddress();
-                        return true;
-                    }
+// 键盘回车打开
+address.setOnEditorActionListener((v, actionId, event) -> {
 
-                    return false;
-                }
-        );
+    if (event != null &&
+            event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
+            event.getAction() == KeyEvent.ACTION_DOWN) {
+        loadAddress();
+        return true;
+    }
 
-        // 控制栏固定在网页下方
-        content.addView(
-                bottomBar,
-                new LinearLayout.LayoutParams(-1, -2)
-        );
+    if (actionId == EditorInfo.IME_ACTION_GO ||
+            actionId == EditorInfo.IME_ACTION_DONE ||
+            actionId == EditorInfo.IME_ACTION_SEARCH) {
+        loadAddress();
+        return true;
+    }
+
+    return false;
+});
+
+// 初始位置：底部
+content.addView(
+        bottomBar,
+        new LinearLayout.LayoutParams(-1, -2)
+);
+
 
         root.addView(
                 content,
@@ -331,7 +343,53 @@ public class BrowserActivity extends Activity {
         b.setAllCaps(false);
         return b;
     }
+    private void toggleBarPosition() {
 
+        if (bottomBar == null || content == null) return;
+
+        content.removeView(bottomBar);
+
+        if (!barMoved) {
+
+          // 移动到网页区域中间
+          FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(
+                        -1,
+                        -2,
+                        Gravity.CENTER
+                );
+
+        params.leftMargin = dp(4);
+        params.rightMargin = dp(4);
+
+        bottomBar.setElevation(dp(12));
+
+        root.addView(bottomBar, params);
+
+        barMoved = true;
+
+        moveButton.setText("⌄");
+
+      } else {
+
+        // 移回屏幕底部
+        if (bottomBar.getParent() != null) {
+            ((android.view.ViewGroup) bottomBar.getParent())
+                    .removeView(bottomBar);
+        }
+
+      bottomBar.setElevation(0);
+
+        content.addView(
+                bottomBar,
+                new LinearLayout.LayoutParams(-1, -2)
+        );
+
+        barMoved = false;
+
+        moveButton.setText("⌕");
+    }
+}
     // ================= 主页 =================
 
     private void loadHome() {
@@ -373,7 +431,9 @@ public class BrowserActivity extends Activity {
 
         address.clearFocus();
     }
-
+    if (barMoved) {
+        toggleBarPosition();
+     }
     // ================= 退出视频全屏 =================
 
     private void hideCustomView() {
@@ -478,6 +538,5 @@ public class BrowserActivity extends Activity {
         super.onDestroy();
     }
 }
-
 
 
