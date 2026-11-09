@@ -18,7 +18,11 @@
         <activity
             android:name=".PatternActivity"
             android:exported="false"/>
-
+        <activity
+            android:name=".BrowserActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:exported="true"/>
+    
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
