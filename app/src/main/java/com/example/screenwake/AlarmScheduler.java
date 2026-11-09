@@ -15,10 +15,11 @@ public final class AlarmScheduler {
 
     private AlarmScheduler() {}
 
-    // 获取唯一的定时广播
+    // 获取明确指向 TaskReceiver 的唯一广播
     private static PendingIntent getPendingIntent(Context context) {
-        Intent intent = new Intent(ACTION_TIMER);
-        intent.setPackage(context.getPackageName());
+
+        Intent intent = new Intent(context, TaskReceiver.class);
+        intent.setAction(ACTION_TIMER);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
 
@@ -36,10 +37,12 @@ public final class AlarmScheduler {
 
     // 安排下一次定时任务
     public static synchronized void scheduleNext(Context context) {
+
         Context c = context.getApplicationContext();
 
-        if (!ConfigManager.isEnabled(c) ||
-                ConfigManager.isPaused(c)) {
+        if (!ConfigManager.isEnabled(c)
+                || ConfigManager.isPaused(c)) {
+
             cancelAlarm(c);
             ConfigManager.setNextTrigger(c, 0L);
             return;
@@ -63,12 +66,15 @@ public final class AlarmScheduler {
             PendingIntent pendingIntent = getPendingIntent(c);
 
             if (Build.VERSION.SDK_INT >= 23) {
+
                 alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         triggerTime,
                         pendingIntent
                 );
+
             } else {
+
                 alarmManager.set(
                         AlarmManager.RTC_WAKEUP,
                         triggerTime,
@@ -85,6 +91,9 @@ public final class AlarmScheduler {
                             + interval);
 
         } catch (Exception e) {
+
+            ConfigManager.setNextTrigger(c, 0L);
+
             LogManager.log(c,
                     "安排定时任务失败：" + e.getMessage());
         }
@@ -92,15 +101,19 @@ public final class AlarmScheduler {
 
     // 取消系统闹钟
     public static synchronized void cancelAlarm(Context context) {
+
         Context c = context.getApplicationContext();
 
         AlarmManager alarmManager =
                 (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
 
         if (alarmManager != null) {
+
             try {
                 alarmManager.cancel(getPendingIntent(c));
+
             } catch (Exception e) {
+
                 LogManager.log(c,
                         "取消系统闹钟失败：" + e.getMessage());
             }
@@ -109,6 +122,7 @@ public final class AlarmScheduler {
 
     // 启用定时器
     public static synchronized void enable(Context context) {
+
         Context c = context.getApplicationContext();
 
         ConfigManager.setEnabled(c, true);
@@ -121,9 +135,11 @@ public final class AlarmScheduler {
 
     // 暂停定时器
     public static synchronized void pause(Context context) {
+
         Context c = context.getApplicationContext();
 
         ConfigManager.setPaused(c, true);
+
         cancelAlarm(c);
         ConfigManager.setNextTrigger(c, 0L);
 
@@ -132,9 +148,11 @@ public final class AlarmScheduler {
 
     // 恢复定时器，从当前时间重新计算间隔
     public static synchronized void resume(Context context) {
+
         Context c = context.getApplicationContext();
 
         if (!ConfigManager.isEnabled(c)) {
+
             LogManager.log(c, "恢复失败：定时器尚未启用");
             return;
         }
@@ -148,6 +166,7 @@ public final class AlarmScheduler {
 
     // 完全取消定时器
     public static synchronized void cancel(Context context) {
+
         Context c = context.getApplicationContext();
 
         cancelAlarm(c);
@@ -161,32 +180,40 @@ public final class AlarmScheduler {
 
     // 立即触发一次
     public static synchronized void triggerNow(Context context) {
+
         Context c = context.getApplicationContext();
 
         if (!ConfigManager.isEnabled(c)) {
+
             LogManager.log(c, "立即触发失败：定时器未启用");
             return;
         }
 
         if (ConfigManager.isPaused(c)) {
+
             LogManager.log(c, "立即触发失败：定时器处于暂停状态");
             return;
         }
 
-        // 取消原计划，避免和立即触发产生重复任务
+        // 取消原计划，避免重复触发
         cancelAlarm(c);
         ConfigManager.setNextTrigger(c, 0L);
 
         LogManager.log(c, "用户手动请求立即触发");
 
-        Intent intent = new Intent(ACTION_TIMER);
-        intent.setPackage(c.getPackageName());
+        Intent intent = new Intent(c, TaskReceiver.class);
+        intent.setAction(ACTION_TIMER);
 
         try {
+
             c.sendBroadcast(intent);
+
         } catch (Exception e) {
+
             LogManager.log(c,
                     "立即触发广播失败：" + e.getMessage());
         }
     }
 }
+
+
