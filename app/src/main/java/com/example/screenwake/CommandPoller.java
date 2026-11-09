@@ -36,20 +36,12 @@ public final class CommandPoller {
 
     private CommandPoller() {}
 
-    public interface CommandResultCallback {
-        void onResult(
-                String commandId,
-                boolean success,
-                String message
-        );
-    }
-
     // 开启一小时指令接收窗口
     public static synchronized void startWindow(Context context) {
 
         Context c = context.getApplicationContext();
 
-        stopWindow();
+        stopWindowInternal();
 
         String server = ConfigManager.getServerUrl(c);
         String token = ConfigManager.getToken(c);
@@ -59,18 +51,19 @@ public final class CommandPoller {
 
             LogManager.log(c,
                     "指令窗口未启动：服务器地址或Token未配置");
+
+            CycleService.stop(c);
             return;
         }
 
-        endTime = System.currentTimeMillis() + WINDOW_MS;
+        endTime = SystemClock.elapsedRealtime() + WINDOW_MS;
         RUNNING.set(true);
 
         executor = Executors.newSingleThreadScheduledExecutor();
 
         LogManager.log(c,
-                "一小时指令接收窗口已开启，结束时间：" + endTime);
+                "一小时指令接收窗口已开启，每10秒检查一次");
 
-        // 立即检查一次，之后每10秒检查
         pollingTask = executor.scheduleAtFixedRate(
                 () -> pollOnce(c),
                 0,
@@ -79,8 +72,8 @@ public final class CommandPoller {
         );
     }
 
-    // 停止指令窗口
-    public static synchronized void stopWindow() {
+    // 停止轮询，但不负责停止前台服务
+    private static synchronized void stopWindowInternal() {
 
         RUNNING.set(false);
 
@@ -93,6 +86,17 @@ public final class CommandPoller {
             executor.shutdownNow();
             executor = null;
         }
+    }
+
+    public static synchronized void stopWindow(Context context) {
+
+        Context c = context.getApplicationContext();
+
+        stopWindowInternal();
+
+        LogManager.log(c, "指令接收窗口被主动停止");
+
+        CycleService.stop(c);
     }
 
     public static boolean isRunning() {
@@ -108,7 +112,7 @@ public final class CommandPoller {
             return;
         }
 
-        if (System.currentTimeMillis() >= endTime) {
+        if (SystemClock.elapsedRealtime() >= endTime) {
             finishWindow(c);
             return;
         }
@@ -201,14 +205,12 @@ public final class CommandPoller {
                     continue;
                 }
 
-                // 防止同一指令重复执行
                 if (isCommandSeen(c, commandId)) {
                     LogManager.log(c,
                             "重复指令已忽略，ID：" + commandId);
                     continue;
                 }
 
-                // 收到后立即记录，避免重复执行
                 markCommandSeen(c, commandId);
 
                 LogManager.log(c,
@@ -257,7 +259,7 @@ public final class CommandPoller {
         p.edit().putBoolean("cmd_" + commandId, true).apply();
     }
 
-    // 向服务器回传指令执行结果
+    // 回传指令执行结果
     private static void sendCommandResult(
             Context context,
             String commandId,
@@ -358,10 +360,12 @@ public final class CommandPoller {
             return;
         }
 
-        stopWindow();
+        stopWindowInternal();
 
         LogManager.log(context,
                 "一小时指令接收窗口结束，停止轮询");
+
+        CycleService.stop(context);
     }
 }
 
