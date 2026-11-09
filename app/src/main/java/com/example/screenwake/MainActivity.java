@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.BLACK);
 
         buildLauncher();
+        AlarmScheduler.scheduleBaseline(this);
     }
 
     @Override
