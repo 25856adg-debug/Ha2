@@ -2,7 +2,8 @@ package com.example.screenwake;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.SystemClock;
+import android.os.Handler;
+import android.os.Looper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -18,68 +19,122 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class CommandPoller {
+public class CommandPoller {
 
+    private static final String TAG = "CommandPoller";
     private static final long WINDOW_MS = 60L * 60L * 1000L;
-    private static final long INTERVAL_SECONDS = 10L;
+    private static final long POLL_SECONDS = 10L;
 
-    private static final AtomicBoolean RUNNING =
-            new AtomicBoolean(false);
+    private static volatile boolean RUNNING = false;
+    private static volatile long endTime = 0L;
 
     private static ScheduledExecutorService executor;
-    private static ScheduledFuture<?> pollingTask;
-    private static long endTime;
-
-    private static final String PREF = "screenwake_commands";
+    private static ScheduledFuture<?> future;
 
     private CommandPoller() {}
 
-    // 开启一小时指令接收窗口
+    // 上传完成后，开启一小时指令接收窗口
     public static synchronized void startWindow(Context context) {
-
-        Context c = context.getApplicationContext();
+        Context app = context.getApplicationContext();
 
         stopWindowInternal();
 
-        String server = ConfigManager.getServerUrl(c);
-        String token = ConfigManager.getToken(c);
+        String server = ConfigManager.getServerUrl(app);
+        String token = ConfigManager.getDeviceToken(app);
 
         if (server == null || !server.startsWith("https://")
-                || token == null || token.isEmpty()) {
-
-            LogManager.log(c,
-                    "指令窗口未启动：服务器地址或Token未配置");
-
-            CycleService.stop(c);
+                || token == null || token.trim().isEmpty()) {
+            ConfigManager.clearCommandWindow(app);
+            LogManager.log(app, "指令轮询未启动：服务器地址或Token无效");
+            CycleService.stop(app);
             return;
         }
 
-        endTime = SystemClock.elapsedRealtime() + WINDOW_MS;
-        RUNNING.set(true);
+        long deadline = System.currentTimeMillis() + WINDOW_MS;
+
+        ConfigManager.setCommandWindowEnd(app, deadline);
+
+        startPollingUntil(app, deadline);
+
+        LogManager.log(app, "指令接收窗口已开启，持续一小时，每10秒轮询");
+    }
+
+    // 进程或前台服务重新创建时，恢复原来的剩余时间
+    public static synchronized void restoreWindow(Context context) {
+        Context app = context.getApplicationContext();
+
+        if (RUNNING) {
+            return;
+        }
+
+        long deadline = ConfigManager.getCommandWindowEnd(app);
+
+        if (deadline <= System.currentTimeMillis()) {
+            ConfigManager.clearCommandWindow(app);
+            LogManager.log(app, "指令接收窗口已过期");
+            CycleService.stop(app);
+            return;
+        }
+
+        String server = ConfigManager.getServerUrl(app);
+        String token = ConfigManager.getDeviceToken(app);
+
+        if (server == null || !server.startsWith("https://")
+                || token == null || token.trim().isEmpty()) {
+            ConfigManager.clearCommandWindow(app);
+            LogManager.log(app, "恢复指令窗口失败：服务器地址或Token无效");
+            CycleService.stop(app);
+            return;
+        }
+
+        startPollingUntil(app, deadline);
+
+        long remaining = deadline - System.currentTimeMillis();
+        LogManager.log(app, "指令轮询已恢复，剩余 "
+                + (remaining / 1000) + " 秒");
+    }
+
+    private static synchronized void startPollingUntil(
+            Context context, long deadline) {
+
+        stopWindowInternal();
+
+        endTime = deadline;
+        RUNNING = true;
 
         executor = Executors.newSingleThreadScheduledExecutor();
 
-        LogManager.log(c,
-                "一小时指令接收窗口已开启，每10秒检查一次");
-
-        pollingTask = executor.scheduleAtFixedRate(
-                () -> pollOnce(c),
+        future = executor.scheduleWithFixedDelay(
+                () -> pollOnce(context.getApplicationContext()),
                 0,
-                INTERVAL_SECONDS,
+                POLL_SECONDS,
                 TimeUnit.SECONDS
         );
     }
 
-    // 停止轮询，但不负责停止前台服务
+    public static boolean isRunning() {
+        return RUNNING;
+    }
+
+    // 主动停止窗口
+    public static synchronized void stopWindow(Context context) {
+        Context app = context.getApplicationContext();
+
+        stopWindowInternal();
+        ConfigManager.clearCommandWindow(app);
+
+        LogManager.log(app, "指令接收窗口已手动停止");
+        CycleService.stop(app);
+    }
+
     private static synchronized void stopWindowInternal() {
+        RUNNING = false;
+        endTime = 0L;
 
-        RUNNING.set(false);
-
-        if (pollingTask != null) {
-            pollingTask.cancel(true);
-            pollingTask = null;
+        if (future != null) {
+            future.cancel(true);
+            future = null;
         }
 
         if (executor != null) {
@@ -88,107 +143,100 @@ public final class CommandPoller {
         }
     }
 
-    public static synchronized void stopWindow(Context context) {
-
-        Context c = context.getApplicationContext();
-
-        stopWindowInternal();
-
-        LogManager.log(c, "指令接收窗口被主动停止");
-
-        CycleService.stop(c);
-    }
-
-    public static boolean isRunning() {
-        return RUNNING.get();
-    }
-
-    // 单次查询
     private static void pollOnce(Context context) {
 
-        Context c = context.getApplicationContext();
-
-        if (!RUNNING.get()) {
+        if (!RUNNING) {
             return;
         }
 
-        if (SystemClock.elapsedRealtime() >= endTime) {
-            finishWindow(c);
+        if (System.currentTimeMillis() >= endTime) {
+            finishWindow(context);
             return;
         }
 
-        HttpURLConnection connection = null;
+        String server = ConfigManager.getServerUrl(context);
+        String token = ConfigManager.getDeviceToken(context);
+        String deviceId = ConfigManager.getDeviceId(context);
+
+        if (server == null || !server.startsWith("https://")
+                || token == null || token.trim().isEmpty()) {
+            LogManager.log(context, "轮询停止：服务器配置无效");
+            finishWindow(context);
+            return;
+        }
+
+        HttpURLConnection conn = null;
 
         try {
-            String baseUrl = ConfigManager.getServerUrl(c);
-            String token = ConfigManager.getToken(c);
-
-            if (baseUrl == null || !baseUrl.startsWith("https://")
-                    || token == null || token.isEmpty()) {
-                LogManager.log(c, "指令查询失败：服务器配置无效");
-                return;
-            }
-
-            String url = baseUrl.replaceAll("/+$", "")
-                    + "/api/device/commands/poll";
+            String base = server.replaceAll("/+$", "");
+            URL url = new URL(base + "/api/device/commands/poll");
 
             JSONObject body = new JSONObject();
-            body.put("device_id", ConfigManager.getDeviceId(c));
+            body.put("device_id", deviceId);
             body.put("timestamp", System.currentTimeMillis());
 
-            connection = (HttpURLConnection)
-                    new URL(url).openConnection();
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setDoOutput(true);
+            conn.setInstanceFollowRedirects(false);
 
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
-            connection.setDoOutput(true);
-            connection.setDoInput(true);
-            connection.setUseCaches(false);
-            connection.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("X-Device-Token", token);
+            conn.setRequestProperty("X-Device-Id", deviceId);
 
-            connection.setRequestProperty(
-                    "Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("X-Device-Token", token);
-            connection.setRequestProperty(
-                    "X-Device-Id", ConfigManager.getDeviceId(c));
+            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
 
-            byte[] data = body.toString().getBytes(
-                    StandardCharsets.UTF_8);
-
-            try (OutputStream os = connection.getOutputStream()) {
+            try (OutputStream os = conn.getOutputStream()) {
                 os.write(data);
                 os.flush();
             }
 
-            int code = connection.getResponseCode();
+            int code = conn.getResponseCode();
 
-            if (code < 200 || code >= 300) {
-                LogManager.log(c,
-                        "指令查询失败，HTTP：" + code);
-                return;
+            InputStream input = code >= 200 && code < 300
+                    ? conn.getInputStream()
+                    : conn.getErrorStream();
+
+            String response = readResponse(input);
+
+            if (code >= 200 && code < 300) {
+                handleCommands(context, response);
+            } else {
+                LogManager.log(context, "指令轮询HTTP失败：" + code);
             }
 
-            String response = readResponse(connection);
-
-            if (response == null || response.trim().isEmpty()) {
-                return;
+        } catch (Exception e) {
+            LogManager.log(context, "指令轮询异常：" + e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
             }
+        }
 
-            JSONObject result = new JSONObject(response);
-            JSONArray commands = result.optJSONArray("commands");
+        if (RUNNING && System.currentTimeMillis() >= endTime) {
+            finishWindow(context);
+        }
+    }
+
+    private static void handleCommands(Context context, String response) {
+
+        try {
+            JSONObject root = new JSONObject(response);
+            JSONArray commands = root.optJSONArray("commands");
 
             if (commands == null || commands.length() == 0) {
                 return;
             }
 
-            LogManager.log(c,
-                    "服务器返回指令数量：" + commands.length());
+            SharedPreferences prefs = context.getSharedPreferences(
+                    "screenwake_commands", Context.MODE_PRIVATE);
 
             for (int i = 0; i < commands.length(); i++) {
 
-                if (!RUNNING.get()) {
+                if (!RUNNING || System.currentTimeMillis() >= endTime) {
                     break;
                 }
 
@@ -198,150 +246,108 @@ public final class CommandPoller {
                     continue;
                 }
 
-                String commandId = command.optString("id", "");
+                String commandId = command.optString("id", "").trim();
 
                 if (commandId.isEmpty()) {
-                    LogManager.log(c, "收到无ID指令，已忽略");
                     continue;
                 }
 
-                if (isCommandSeen(c, commandId)) {
-                    LogManager.log(c,
-                            "重复指令已忽略，ID：" + commandId);
+                String key = "cmd_" + commandId;
+
+                if (prefs.getBoolean(key, false)) {
                     continue;
                 }
 
-                markCommandSeen(c, commandId);
+                // 先标记，防止重复执行同一条指令
+                prefs.edit().putBoolean(key, true).apply();
 
-                LogManager.log(c,
-                        "收到新指令，ID：" + commandId);
+                LogManager.log(context, "收到服务器指令：" + commandId);
 
                 CommandExecutor.execute(
-                        c,
+                        context,
                         command,
-                        (id, success, message) ->
-                                sendCommandResult(
-                                        c, id, success, message
-                                )
+                        (id, success, message) -> sendCommandResult(
+                                context, id, success, message)
                 );
             }
 
         } catch (Exception e) {
-
-            LogManager.log(c,
-                    "指令查询异常：" + e.getMessage());
-
-        } finally {
-
-            if (connection != null) {
-                connection.disconnect();
-            }
+            LogManager.log(context, "解析服务器指令失败：" + e.getMessage());
         }
     }
 
-    // 检查指令是否已经处理过
-    private static boolean isCommandSeen(
-            Context context, String commandId) {
-
-        SharedPreferences p = context.getSharedPreferences(
-                PREF, Context.MODE_PRIVATE);
-
-        return p.getBoolean("cmd_" + commandId, false);
-    }
-
-    // 记录已接收的指令
-    private static void markCommandSeen(
-            Context context, String commandId) {
-
-        SharedPreferences p = context.getSharedPreferences(
-                PREF, Context.MODE_PRIVATE);
-
-        p.edit().putBoolean("cmd_" + commandId, true).apply();
-    }
-
-    // 回传指令执行结果
     private static void sendCommandResult(
             Context context,
             String commandId,
             boolean success,
             String message) {
 
-        Context c = context.getApplicationContext();
-
-        HttpURLConnection connection = null;
+        HttpURLConnection conn = null;
 
         try {
-            String baseUrl = ConfigManager.getServerUrl(c);
-            String token = ConfigManager.getToken(c);
+            String server = ConfigManager.getServerUrl(context);
+            String token = ConfigManager.getDeviceToken(context);
+            String deviceId = ConfigManager.getDeviceId(context);
 
-            if (baseUrl == null || !baseUrl.startsWith("https://")
-                    || token == null || token.isEmpty()) {
-                LogManager.log(c, "指令结果上传失败：配置无效");
+            if (server == null || !server.startsWith("https://")
+                    || token == null || token.trim().isEmpty()) {
                 return;
             }
 
-            String url = baseUrl.replaceAll("/+$", "")
-                    + "/api/device/commands/result";
+            String base = server.replaceAll("/+$", "");
+            URL url = new URL(base + "/api/device/commands/result");
 
             JSONObject body = new JSONObject();
-            body.put("device_id", ConfigManager.getDeviceId(c));
+            body.put("device_id", deviceId);
             body.put("command_id", commandId);
             body.put("success", success);
             body.put("message", message == null ? "" : message);
             body.put("timestamp", System.currentTimeMillis());
 
-            connection = (HttpURLConnection)
-                    new URL(url).openConnection();
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setDoOutput(true);
+            conn.setInstanceFollowRedirects(false);
 
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
-            connection.setDoOutput(true);
-            connection.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("X-Device-Token", token);
+            conn.setRequestProperty("X-Device-Id", deviceId);
 
-            connection.setRequestProperty(
-                    "Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("X-Device-Token", token);
-            connection.setRequestProperty(
-                    "X-Device-Id", ConfigManager.getDeviceId(c));
+            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
 
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(body.toString().getBytes(
-                        StandardCharsets.UTF_8));
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(data);
                 os.flush();
             }
 
-            int code = connection.getResponseCode();
+            int code = conn.getResponseCode();
 
-            LogManager.log(c,
-                    "指令结果回传，ID：" + commandId
-                            + "，HTTP：" + code
-                            + "，执行结果：" + success);
+            LogManager.log(context, "指令结果回传：" + commandId
+                    + "，HTTP " + code);
 
         } catch (Exception e) {
-
-            LogManager.log(c,
-                    "指令结果回传异常：" + e.getMessage());
-
+            LogManager.log(context, "指令结果回传失败："
+                    + e.getMessage());
         } finally {
-
-            if (connection != null) {
-                connection.disconnect();
+            if (conn != null) {
+                conn.disconnect();
             }
         }
     }
 
-    // 读取服务器响应
-    private static String readResponse(
-            HttpURLConnection connection) throws Exception {
+    private static String readResponse(InputStream input) throws Exception {
 
-        InputStream input = connection.getInputStream();
+        if (input == null) {
+            return "";
+        }
 
         StringBuilder result = new StringBuilder();
 
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(
-                        input, StandardCharsets.UTF_8))) {
+                new InputStreamReader(input, StandardCharsets.UTF_8))) {
 
             String line;
 
@@ -353,19 +359,20 @@ public final class CommandPoller {
         return result.toString();
     }
 
-    // 一小时结束
     private static synchronized void finishWindow(Context context) {
 
-        if (!RUNNING.getAndSet(false)) {
+        if (!RUNNING) {
             return;
         }
 
         stopWindowInternal();
 
-        LogManager.log(context,
-                "一小时指令接收窗口结束，停止轮询");
+        ConfigManager.clearCommandWindow(context);
+
+        LogManager.log(context, "一小时指令接收时间结束，轮询已关闭");
 
         CycleService.stop(context);
     }
 }
+
 
