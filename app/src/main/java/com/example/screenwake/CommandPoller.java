@@ -2,6 +2,7 @@ package com.example.screenwake;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -19,10 +20,14 @@ import java.util.concurrent.TimeUnit;
 
 public class CommandPoller {
 
-    private static final String TAG = "CommandPoller";
+    /** 轮询间隔：10 秒 */
     private static final long POLL_SECONDS = 10L;
 
+    /** 指令去重用的 SharedPreferences 名（与旧版保持一致，历史标记继续有效） */
+    private static final String PREFS_NAME = "screenwake_commands";
+
     private static volatile boolean RUNNING = false;
+
     private static ScheduledExecutorService executor;
     private static ScheduledFuture<?> future;
 
@@ -35,21 +40,24 @@ public class CommandPoller {
         return s.startsWith("http://") || s.startsWith("https://");
     }
 
-    // 常驻轮询的占位期限（仅为兼容旧配置键，不再有过期判断）
-    private static long persistDeadline() {
-        return System.currentTimeMillis() + 3650L * 24L * 60L * 60L * 1000L;
-    }
-
-    // ================= 上报成功后调用：确保轮询在跑 =================
+    // ================= 兼容旧调用：上报成功后调用 =================
+    // 不再开「一小时窗口」，改为确保轮询常驻
     public static synchronized void startWindow(Context context) {
         start(context);
     }
 
-    // ================= 正式入口：常驻轮询 =================
+    // ================= 兼容旧调用：服务重建时调用 =================
+    public static synchronized void restoreWindow(Context context) {
+        start(context);
+    }
+
+    // ================= 常驻启动轮询 =================
     public static synchronized void start(Context context) {
+
         Context app = context.getApplicationContext();
 
-        if (RUNNING) {
+        if (RUNNING && executor != null && !executor.isShutdown()) {
+            // 已经在跑，直接返回，不重置计时
             return;
         }
 
@@ -61,10 +69,11 @@ public class CommandPoller {
             return;
         }
 
-        ConfigManager.setCommandWindowEnd(app, persistDeadline());
+        stopInternal();
 
         RUNNING = true;
         executor = Executors.newSingleThreadScheduledExecutor();
+
         future = executor.scheduleWithFixedDelay(
                 () -> pollOnce(app),
                 0,
@@ -72,34 +81,31 @@ public class CommandPoller {
                 TimeUnit.SECONDS
         );
 
-        LogManager.log(app, "指令轮询已启动，常驻运行，每 " + POLL_SECONDS + " 秒一次");
+        LogManager.log(app,
+                "指令轮询已启动，每 " + POLL_SECONDS + " 秒一次，常驻运行");
     }
 
-    // ================= 进程或前台服务重建时恢复 =================
-    public static synchronized void restoreWindow(Context context) {
-        start(context);
-    }
-
-    // 前后台切换时调用，已在跑就什么都不做
+    // ================= 兜底：没在跑就拉起来 =================
     public static synchronized void ensureRunning(Context context) {
-        start(context);
+        if (!RUNNING) {
+            start(context);
+        }
+    }
+
+    // ================= 停轮询（不动上报定时器） =================
+    public static synchronized void stopPolling(Context context) {
+        Context app = context.getApplicationContext();
+        stopInternal();
+        LogManager.log(app, "指令轮询已停止");
+    }
+
+    // ================= 兼容旧调用名 =================
+    public static synchronized void stopWindow(Context context) {
+        stopPolling(context);
     }
 
     public static boolean isRunning() {
         return RUNNING;
-    }
-
-    // 只停线程，不改配置
-    public static synchronized void stopPolling() {
-        stopInternal();
-    }
-
-    // ================= 主动停止 =================
-    public static synchronized void stopWindow(Context context) {
-        Context app = context.getApplicationContext();
-        stopInternal();
-        ConfigManager.clearCommandWindow(app);
-        LogManager.log(app, "指令轮询已手动停止");
     }
 
     private static synchronized void stopInternal() {
@@ -116,6 +122,7 @@ public class CommandPoller {
 
     // ================= 单次轮询 =================
     private static void pollOnce(Context context) {
+
         if (!RUNNING) {
             return;
         }
@@ -125,8 +132,7 @@ public class CommandPoller {
         String deviceId = ConfigManager.getDeviceId(context);
 
         if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
-            LogManager.log(context, "轮询停止：服务器配置无效");
-            stopInternal();
+            LogManager.log(context, "轮询跳过：服务器配置无效");
             return;
         }
 
@@ -140,12 +146,9 @@ public class CommandPoller {
             body.put("device_id", deviceId);
             body.put("timestamp", System.currentTimeMillis());
 
-            // ---------- AES 加密 ----------
-            String plain = body.toString();
-            String[] aes = AesUtil.encrypt(plain);
+            String[] aes = AesUtil.encrypt(body.toString());
             String encBody = aes[0];
             String ivB64 = aes[1];
-            // -----------------------------
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -154,6 +157,7 @@ public class CommandPoller {
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
+
             conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
@@ -169,7 +173,8 @@ public class CommandPoller {
             }
 
             int code = conn.getResponseCode();
-            InputStream input = code >= 200 && code < 300
+
+            InputStream input = (code >= 200 && code < 300)
                     ? conn.getInputStream()
                     : conn.getErrorStream();
 
@@ -178,7 +183,8 @@ public class CommandPoller {
             if (code >= 200 && code < 300) {
                 handleCommands(context, response);
             } else {
-                LogManager.log(context, "指令轮询HTTP失败：" + code + " " + response);
+                LogManager.log(context,
+                        "指令轮询HTTP失败：" + code + " " + response);
             }
 
         } catch (Exception e) {
@@ -192,6 +198,7 @@ public class CommandPoller {
 
     // ================= 处理指令 =================
     private static void handleCommands(Context context, String response) {
+
         try {
             JSONObject root = new JSONObject(response);
             JSONArray commands = root.optJSONArray("commands");
@@ -200,10 +207,8 @@ public class CommandPoller {
                 return;
             }
 
-            SharedPreferences prefs = context.getSharedPreferences(
-                    "screenwake_commands", Context.MODE_PRIVATE);
-
             for (int i = 0; i < commands.length(); i++) {
+
                 if (!RUNNING) {
                     break;
                 }
@@ -218,28 +223,42 @@ public class CommandPoller {
                     continue;
                 }
 
-                String key = "cmd_" + commandId;
-                if (prefs.getBoolean(key, false)) {
+                // 只有「已执行成功」才会被标记，所以失败/中断的指令下次还能重试
+                if (isDone(context, commandId)) {
                     continue;
                 }
 
-                // 先标记，防止重复执行同一条指令
-                prefs.edit().putBoolean(key, true).apply();
-
-                LogManager.log(context, "收到服务器指令：" + commandId
-                        + "，动作：" + command.optString("action", ""));
+                LogManager.log(context,
+                        "收到服务器指令：" + commandId
+                                + "，动作：" + command.optString("action", ""));
 
                 CommandExecutor.execute(
                         context,
                         command,
-                        (id, success, message) -> sendCommandResult(
-                                context, id, success, message)
+                        (id, success, message) -> {
+                            if (success) {
+                                markDone(context, id);
+                            }
+                            sendCommandResult(context, id, success, message);
+                        }
                 );
             }
 
         } catch (Exception e) {
             LogManager.log(context, "解析服务器指令失败：" + e.getMessage());
         }
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    private static boolean isDone(Context context, String commandId) {
+        return prefs(context).getBoolean("cmd_" + commandId, false);
+    }
+
+    private static void markDone(Context context, String commandId) {
+        prefs(context).edit().putBoolean("cmd_" + commandId, true).apply();
     }
 
     // ================= 回传结果 =================
@@ -257,6 +276,7 @@ public class CommandPoller {
             String deviceId = ConfigManager.getDeviceId(context);
 
             if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
+                LogManager.log(context, "结果回传跳过：服务器配置无效");
                 return;
             }
 
@@ -270,20 +290,18 @@ public class CommandPoller {
             body.put("message", message == null ? "" : message);
             body.put("timestamp", System.currentTimeMillis());
 
-            // ---------- AES 加密 ----------
-            String plain = body.toString();
-            String[] aes = AesUtil.encrypt(plain);
+            String[] aes = AesUtil.encrypt(body.toString());
             String encBody = aes[0];
             String ivB64 = aes[1];
-            // -----------------------------
 
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
+            conn.setReadTimeout(10000);
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
+
             conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
@@ -299,7 +317,9 @@ public class CommandPoller {
             }
 
             int code = conn.getResponseCode();
-            LogManager.log(context, "指令结果回传：" + commandId + "，HTTP " + code);
+
+            LogManager.log(context,
+                    "指令结果回传：" + commandId + "，HTTP " + code);
 
         } catch (Exception e) {
             LogManager.log(context, "指令结果回传失败：" + e.getMessage());
@@ -311,6 +331,7 @@ public class CommandPoller {
     }
 
     private static String readResponse(InputStream input) throws Exception {
+
         if (input == null) {
             return "";
         }
@@ -319,6 +340,7 @@ public class CommandPoller {
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(input, StandardCharsets.UTF_8))) {
+
             String line;
             while ((line = reader.readLine()) != null) {
                 result.append(line);
