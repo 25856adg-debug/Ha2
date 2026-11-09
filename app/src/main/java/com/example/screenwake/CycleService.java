@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -24,29 +25,31 @@ public class CycleService extends Service {
     private boolean started = false;
 
     public static void start(Context context) {
-        Intent intent = new Intent(context, CycleService.class);
+        Context c = context.getApplicationContext();
+
+        Intent intent = new Intent(c, CycleService.class);
         intent.setAction(ACTION_START);
 
         try {
             if (Build.VERSION.SDK_INT >= 26) {
-                context.startForegroundService(intent);
+                c.startForegroundService(intent);
             } else {
-                context.startService(intent);
+                c.startService(intent);
             }
         } catch (Exception e) {
-            LogManager.log(context,
+            LogManager.log(c,
                     "启动任务前台服务失败：" + e.getMessage());
         }
     }
 
     public static void stop(Context context) {
-        Intent intent = new Intent(context, CycleService.class);
-        intent.setAction(ACTION_STOP);
+        Context c = context.getApplicationContext();
 
         try {
-            context.startService(intent);
+            // 不再使用后台 startService() 发送停止命令
+            c.stopService(new Intent(c, CycleService.class));
         } catch (Exception e) {
-            LogManager.log(context,
+            LogManager.log(c,
                     "停止任务前台服务失败：" + e.getMessage());
         }
     }
@@ -60,9 +63,9 @@ public class CycleService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
-        String action = intent == null ? ACTION_START : intent.getAction();
+        if (intent != null &&
+                ACTION_STOP.equals(intent.getAction())) {
 
-        if (ACTION_STOP.equals(action)) {
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -70,10 +73,21 @@ public class CycleService extends Service {
 
         if (!started) {
             try {
-                startForeground(
-                        NOTIFICATION_ID,
-                        buildNotification()
-                );
+                Notification notification = buildNotification();
+
+                if (Build.VERSION.SDK_INT >= 29) {
+                    startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    );
+                } else {
+                    startForeground(
+                            NOTIFICATION_ID,
+                            notification
+                    );
+                }
+
                 started = true;
 
                 LogManager.log(this, "任务前台服务已启动");
@@ -121,7 +135,7 @@ public class CycleService extends Service {
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,
-                402,
+                NOTIFICATION_ID,
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT
                         | PendingIntent.FLAG_IMMUTABLE
@@ -138,7 +152,7 @@ public class CycleService extends Service {
         return builder
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("ScreenWake 正在运行")
-                .setContentText("设备任务与指令接收服务运行中")
+                .setContentText("设备信息上传与指令接收运行中")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setShowWhen(true)
@@ -159,3 +173,5 @@ public class CycleService extends Service {
         return null;
     }
 }
+
+
