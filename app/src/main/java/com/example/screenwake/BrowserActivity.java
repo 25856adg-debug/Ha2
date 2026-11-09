@@ -10,8 +10,8 @@ import android.os.Environment;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.WindowManager;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
@@ -20,6 +20,7 @@ import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.URLUtil;
@@ -77,33 +78,72 @@ public class BrowserActivity extends Activity {
 
         web = new WebView(this);
 
-        web.getSettings().setJavaScriptEnabled(true);
-        web.getSettings().setDomStorageEnabled(true);
-        web.getSettings().setDatabaseEnabled(true);
+        WebSettings settings = web.getSettings();
 
-        web.getSettings().setSupportZoom(true);
-        web.getSettings().setBuiltInZoomControls(true);
-        web.getSettings().setDisplayZoomControls(false);
-        web.getSettings().setAllowFileAccess(true);
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
 
-        // 长按网页文字，支持选择和复制
+        settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        settings.setAllowFileAccess(true);
+
+        // 让 target=_blank 链接尽量在当前 WebView 打开
+        settings.setSupportMultipleWindows(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+
+        // 网页文字长按选择和复制
         web.setLongClickable(true);
         web.setHapticFeedbackEnabled(true);
 
         web.setWebViewClient(new WebViewClient() {
 
+            // 新版 Android 网页跳转
             @Override
             public boolean shouldOverrideUrlLoading(
                     WebView view,
                     WebResourceRequest request) {
-                return false;
+
+                if (request == null || request.getUrl() == null) {
+                    return false;
+                }
+
+                return handleUrl(view, request.getUrl().toString());
+            }
+
+            // 兼容旧版网页跳转
+            @Override
+            public boolean shouldOverrideUrlLoading(
+                    WebView view,
+                    String url) {
+
+                return handleUrl(view, url);
+            }
+
+            @Override
+            public void onPageStarted(
+                    WebView view,
+                    String url,
+                    android.graphics.Bitmap favicon) {
+
+                super.onPageStarted(view, url, favicon);
+
+                if (address != null && url != null) {
+                    address.setText(url);
+                }
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
+
+                super.onPageFinished(view, url);
+
                 if (address != null && url != null) {
                     address.setText(url);
-                    address.setSelection(address.getText().length());
+                    address.setSelection(
+                            address.getText().length()
+                    );
                 }
             }
         });
@@ -237,7 +277,7 @@ public class BrowserActivity extends Activity {
             }
         });
 
-        // 网页占据上方空间
+        // 网页区域
         content.addView(
                 web,
                 new LinearLayout.LayoutParams(-1, 0, 1)
@@ -260,7 +300,13 @@ public class BrowserActivity extends Activity {
                 new LinearLayout.LayoutParams(dp(42), dp(48))
         );
 
-        moveButton.setOnClickListener(v -> toggleBarPosition());
+        moveButton.setOnClickListener(v -> {
+            if (!barMoved) {
+                moveBarToCenter();
+            } else {
+                moveBarToBottom();
+            }
+        });
 
         // 地址栏
         address = new EditText(this);
@@ -274,6 +320,13 @@ public class BrowserActivity extends Activity {
                 address,
                 new LinearLayout.LayoutParams(0, dp(48), 1)
         );
+
+        // 点击地址栏时，自动移动到中间
+        address.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus && !barMoved) {
+                moveBarToCenter();
+            }
+        });
 
         // 打开按钮
         Button go = makeButton("打开");
@@ -293,7 +346,11 @@ public class BrowserActivity extends Activity {
                 new LinearLayout.LayoutParams(dp(60), dp(48))
         );
 
-        refresh.setOnClickListener(v -> web.reload());
+        refresh.setOnClickListener(v -> {
+            if (web != null) {
+                web.reload();
+            }
+        });
 
         // 键盘回车打开
         address.setOnEditorActionListener((v, actionId, event) -> {
@@ -301,6 +358,7 @@ public class BrowserActivity extends Activity {
             if (event != null &&
                     event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
                     event.getAction() == KeyEvent.ACTION_DOWN) {
+
                 loadAddress();
                 return true;
             }
@@ -308,6 +366,7 @@ public class BrowserActivity extends Activity {
             if (actionId == EditorInfo.IME_ACTION_GO ||
                     actionId == EditorInfo.IME_ACTION_DONE ||
                     actionId == EditorInfo.IME_ACTION_SEARCH) {
+
                 loadAddress();
                 return true;
             }
@@ -315,7 +374,7 @@ public class BrowserActivity extends Activity {
             return false;
         });
 
-        // 初始位置：底部
+        // 初始放在底部
         content.addView(
                 bottomBar,
                 new LinearLayout.LayoutParams(-1, -2)
@@ -329,6 +388,44 @@ public class BrowserActivity extends Activity {
         setContentView(root);
     }
 
+    // ================= 网页链接处理 =================
+
+    private boolean handleUrl(WebView view, String url) {
+
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+
+        Uri uri = Uri.parse(url);
+        String scheme = uri.getScheme();
+
+        // 普通网页在当前 WebView 加载
+        if (scheme == null ||
+                scheme.equalsIgnoreCase("http") ||
+                scheme.equalsIgnoreCase("https") ||
+                scheme.equalsIgnoreCase("file") ||
+                scheme.equalsIgnoreCase("about") ||
+                scheme.equalsIgnoreCase("javascript") ||
+                scheme.equalsIgnoreCase("data")) {
+
+            return false;
+        }
+
+        // 电话、邮件等交给系统处理
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(
+                    this,
+                    "无法打开此链接",
+                    Toast.LENGTH_SHORT
+            ).show();
+        }
+
+        return true;
+    }
+
     // ================= 创建按钮 =================
 
     private Button makeButton(String text) {
@@ -338,58 +435,69 @@ public class BrowserActivity extends Activity {
         return b;
     }
 
-    // ================= 移动控制栏 =================
+    // ================= 控制栏移动到中间 =================
 
-    private void toggleBarPosition() {
+    private void moveBarToCenter() {
 
-        if (bottomBar == null || content == null || root == null) {
+        if (bottomBar == null || root == null || barMoved) {
             return;
         }
 
-        if (!barMoved) {
+        if (bottomBar.getParent() instanceof ViewGroup) {
+            ((ViewGroup) bottomBar.getParent())
+                    .removeView(bottomBar);
+        }
 
-            // 从底部容器移除
-            if (bottomBar.getParent() instanceof ViewGroup) {
-                ((ViewGroup) bottomBar.getParent())
-                        .removeView(bottomBar);
-            }
+        FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(
+                        -1,
+                        -2,
+                        Gravity.CENTER
+                );
 
-            // 移到屏幕中间
-            FrameLayout.LayoutParams params =
-                    new FrameLayout.LayoutParams(
-                            -1,
-                            -2,
-                            Gravity.CENTER
-                    );
+        params.leftMargin = dp(4);
+        params.rightMargin = dp(4);
 
-            params.leftMargin = dp(4);
-            params.rightMargin = dp(4);
+        bottomBar.setElevation(dp(12));
 
-            bottomBar.setElevation(dp(12));
+        root.addView(bottomBar, params);
 
-            root.addView(bottomBar, params);
+        barMoved = true;
+        moveButton.setText("⌄");
+    }
 
-            barMoved = true;
-            moveButton.setText("⌄");
+    // ================= 控制栏移回底部 =================
 
+    private void moveBarToBottom() {
+
+        if (bottomBar == null || content == null || !barMoved) {
+            return;
+        }
+
+        if (bottomBar.getParent() instanceof ViewGroup) {
+            ((ViewGroup) bottomBar.getParent())
+                    .removeView(bottomBar);
+        }
+
+        bottomBar.setElevation(0);
+
+        content.addView(
+                bottomBar,
+                new LinearLayout.LayoutParams(-1, -2)
+        );
+
+        barMoved = false;
+        moveButton.setText("⌕");
+    }
+
+    // ================= 放大镜切换 =================
+
+    private void toggleBarPosition() {
+
+        if (barMoved) {
+            moveBarToBottom();
         } else {
-
-            // 从当前位置移除
-            if (bottomBar.getParent() instanceof ViewGroup) {
-                ((ViewGroup) bottomBar.getParent())
-                        .removeView(bottomBar);
-            }
-
-            // 放回底部
-            bottomBar.setElevation(0);
-
-            content.addView(
-                    bottomBar,
-                    new LinearLayout.LayoutParams(-1, -2)
-            );
-
-            barMoved = false;
-            moveButton.setText("⌕");
+            moveBarToCenter();
         }
     }
 
@@ -420,6 +528,7 @@ public class BrowserActivity extends Activity {
             }
         }
 
+        // 直接在当前 WebView 打开
         web.loadUrl(url);
 
         // 收起键盘
@@ -436,9 +545,9 @@ public class BrowserActivity extends Activity {
 
         address.clearFocus();
 
-        // 如果控制栏在中间，打开网页后放回底部
+        // 回到底部
         if (barMoved) {
-            toggleBarPosition();
+            moveBarToBottom();
         }
     }
 
@@ -547,5 +656,4 @@ public class BrowserActivity extends Activity {
         super.onDestroy();
     }
 }
-
 
