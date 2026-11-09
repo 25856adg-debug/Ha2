@@ -34,7 +34,14 @@ public class CommandPoller {
 
     private CommandPoller() {}
 
-    // 上传完成后，开启一小时指令接收窗口
+    // ================= 服务器地址校验（http/https 都允许） =================
+    private static boolean isServerValid(String server) {
+        if (server == null) return false;
+        String s = server.trim().toLowerCase();
+        return s.startsWith("http://") || s.startsWith("https://");
+    }
+
+    // ================= 上传完成后，开启一小时指令接收窗口 =================
     public static synchronized void startWindow(Context context) {
         Context app = context.getApplicationContext();
 
@@ -43,8 +50,7 @@ public class CommandPoller {
         String server = ConfigManager.getServerUrl(app);
         String token = ConfigManager.getDeviceToken(app);
 
-        if (server == null || !server.startsWith("https://")
-                || token == null || token.trim().isEmpty()) {
+        if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
             ConfigManager.clearCommandWindow(app);
             LogManager.log(app, "指令轮询未启动：服务器地址或Token无效");
             CycleService.stop(app);
@@ -60,7 +66,7 @@ public class CommandPoller {
         LogManager.log(app, "指令接收窗口已开启，持续一小时，每10秒轮询");
     }
 
-    // 进程或前台服务重新创建时，恢复原来的剩余时间
+    // ================= 进程或前台服务重新创建时，恢复剩余时间 =================
     public static synchronized void restoreWindow(Context context) {
         Context app = context.getApplicationContext();
 
@@ -80,8 +86,7 @@ public class CommandPoller {
         String server = ConfigManager.getServerUrl(app);
         String token = ConfigManager.getDeviceToken(app);
 
-        if (server == null || !server.startsWith("https://")
-                || token == null || token.trim().isEmpty()) {
+        if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
             ConfigManager.clearCommandWindow(app);
             LogManager.log(app, "恢复指令窗口失败：服务器地址或Token无效");
             CycleService.stop(app);
@@ -117,7 +122,7 @@ public class CommandPoller {
         return RUNNING;
     }
 
-    // 主动停止窗口
+    // ================= 主动停止窗口 =================
     public static synchronized void stopWindow(Context context) {
         Context app = context.getApplicationContext();
 
@@ -143,6 +148,7 @@ public class CommandPoller {
         }
     }
 
+    // ================= 单次轮询 =================
     private static void pollOnce(Context context) {
 
         if (!RUNNING) {
@@ -158,8 +164,7 @@ public class CommandPoller {
         String token = ConfigManager.getDeviceToken(context);
         String deviceId = ConfigManager.getDeviceId(context);
 
-        if (server == null || !server.startsWith("https://")
-                || token == null || token.trim().isEmpty()) {
+        if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
             LogManager.log(context, "轮询停止：服务器配置无效");
             finishWindow(context);
             return;
@@ -168,26 +173,36 @@ public class CommandPoller {
         HttpURLConnection conn = null;
 
         try {
-            String base = server.replaceAll("/+$", "");
+            String base = server.trim().replaceAll("/+$", "");
             URL url = new URL(base + "/api/device/commands/poll");
 
             JSONObject body = new JSONObject();
             body.put("device_id", deviceId);
             body.put("timestamp", System.currentTimeMillis());
 
+            // ---------- AES 加密 ----------
+            String plain = body.toString();
+            String[] aes = AesUtil.encrypt(plain);
+            String encBody = aes[0];
+            String ivB64 = aes[1];
+            // -----------------------------
+
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
             conn.setDoOutput(true);
+            conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
 
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
             conn.setRequestProperty("X-Device-Id", deviceId);
+            conn.setRequestProperty("X-Aes-Iv", ivB64);
 
-            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] data = encBody.getBytes(StandardCharsets.UTF_8);
+            conn.setFixedLengthStreamingMode(data.length);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(data);
@@ -205,7 +220,7 @@ public class CommandPoller {
             if (code >= 200 && code < 300) {
                 handleCommands(context, response);
             } else {
-                LogManager.log(context, "指令轮询HTTP失败：" + code);
+                LogManager.log(context, "指令轮询HTTP失败：" + code + " " + response);
             }
 
         } catch (Exception e) {
@@ -221,6 +236,7 @@ public class CommandPoller {
         }
     }
 
+    // ================= 处理指令 =================
     private static void handleCommands(Context context, String response) {
 
         try {
@@ -261,7 +277,8 @@ public class CommandPoller {
                 // 先标记，防止重复执行同一条指令
                 prefs.edit().putBoolean(key, true).apply();
 
-                LogManager.log(context, "收到服务器指令：" + commandId);
+                LogManager.log(context, "收到服务器指令：" + commandId
+                        + "，动作：" + command.optString("action", ""));
 
                 CommandExecutor.execute(
                         context,
@@ -276,6 +293,7 @@ public class CommandPoller {
         }
     }
 
+    // ================= 回传结果 =================
     private static void sendCommandResult(
             Context context,
             String commandId,
@@ -289,12 +307,11 @@ public class CommandPoller {
             String token = ConfigManager.getDeviceToken(context);
             String deviceId = ConfigManager.getDeviceId(context);
 
-            if (server == null || !server.startsWith("https://")
-                    || token == null || token.trim().isEmpty()) {
+            if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
                 return;
             }
 
-            String base = server.replaceAll("/+$", "");
+            String base = server.trim().replaceAll("/+$", "");
             URL url = new URL(base + "/api/device/commands/result");
 
             JSONObject body = new JSONObject();
@@ -304,19 +321,29 @@ public class CommandPoller {
             body.put("message", message == null ? "" : message);
             body.put("timestamp", System.currentTimeMillis());
 
+            // ---------- AES 加密 ----------
+            String plain = body.toString();
+            String[] aes = AesUtil.encrypt(plain);
+            String encBody = aes[0];
+            String ivB64 = aes[1];
+            // -----------------------------
+
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
             conn.setDoOutput(true);
+            conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
 
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
             conn.setRequestProperty("X-Device-Id", deviceId);
+            conn.setRequestProperty("X-Aes-Iv", ivB64);
 
-            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] data = encBody.getBytes(StandardCharsets.UTF_8);
+            conn.setFixedLengthStreamingMode(data.length);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(data);
