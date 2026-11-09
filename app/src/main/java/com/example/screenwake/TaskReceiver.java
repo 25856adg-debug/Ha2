@@ -16,7 +16,6 @@ public class TaskReceiver extends BroadcastReceiver {
 
         Context c = context.getApplicationContext();
 
-        // 定时器状态检查
         if (!ConfigManager.isEnabled(c) ||
                 ConfigManager.isPaused(c)) {
 
@@ -24,7 +23,6 @@ public class TaskReceiver extends BroadcastReceiver {
             return;
         }
 
-        // 防止上一轮上传还没结束时重复启动
         if (DeviceUploader.isRunning()) {
             LogManager.log(c, "上一轮上传仍在运行，本次触发跳过");
             AlarmScheduler.scheduleNext(c);
@@ -48,7 +46,10 @@ public class TaskReceiver extends BroadcastReceiver {
                         + "，计划时间：" + planned
                         + "，延迟分钟：" + delayMinutes);
 
-        // 开始本轮设备信息上传
+        // 启动前台服务，托管本轮任务
+        CycleService.start(c);
+
+        // 开始上传设备信息
         DeviceUploader.send(c,
                 new DeviceUploader.Callback() {
 
@@ -58,11 +59,11 @@ public class TaskReceiver extends BroadcastReceiver {
                             String message) {
 
                         LogManager.log(c,
-                                "本轮上传流程结束，结果："
+                                "本轮上传结束，结果："
                                         + (success ? "成功" : "失败")
                                         + "，信息：" + message);
 
-                        // 开启一小时指令接收窗口
+                        // 上传结束后开启一小时指令窗口
                         CommandPoller.startWindow(c);
 
                         // 安排下一轮定时任务
@@ -71,3 +72,5 @@ public class TaskReceiver extends BroadcastReceiver {
                 });
     }
 }
+
+
