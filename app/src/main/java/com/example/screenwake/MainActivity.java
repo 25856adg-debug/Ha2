@@ -67,7 +67,11 @@ public class MainActivity extends Activity {
                 new Intent(this,PatternActivity.class)
             )
         );
-
+        addButton(root,"亮屏权限设置",
+            () -> startActivity(
+                new Intent(this,SettingsActivity.class)
+            )
+        );
         addButton(root,"Wi-Fi 设置",
             () -> openSystemSettings(Settings.ACTION_WIFI_SETTINGS)
         );
