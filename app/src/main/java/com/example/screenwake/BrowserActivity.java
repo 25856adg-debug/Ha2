@@ -9,7 +9,9 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
@@ -17,17 +19,18 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.URLUtil;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Toast;
-import android.webkit.URLUtil;
 
 public class BrowserActivity extends Activity {
 
     private FrameLayout root;
     private LinearLayout content;
+    private LinearLayout bottomBar;
     private EditText address;
     private WebView web;
 
@@ -59,54 +62,7 @@ public class BrowserActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setBackgroundColor(Color.WHITE);
 
-        // 第一行：网址输入框
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        row1.setPadding(dp(5), dp(5), dp(5), dp(5));
-
-        address = new EditText(this);
-        address.setSingleLine(true);
-        address.setTextSize(14);
-        address.setHint("输入网址或搜索内容");
-        address.setSelectAllOnFocus(true);
-
-        row1.addView(address,
-                new LinearLayout.LayoutParams(0, dp(48), 1));
-
-        Button go = makeButton("打开");
-        row1.addView(go);
-
-        go.setOnClickListener(v -> loadAddress());
-
-        address.setOnEditorActionListener((v, actionId, event) -> {
-            loadAddress();
-            return true;
-        });
-
-        content.addView(row1);
-
-        // 第二行：浏览器控制按钮
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        row2.setGravity(Gravity.CENTER);
-
-        addNavButton(row2, "后退", () -> {
-            if (web.canGoBack()) web.goBack();
-        });
-
-        addNavButton(row2, "前进", () -> {
-            if (web.canGoForward()) web.goForward();
-        });
-
-        addNavButton(row2, "刷新", () -> web.reload());
-
-        addNavButton(row2, "主页", this::loadHome);
-
-        addNavButton(row2, "退出", this::finish);
-
-        content.addView(row2);
-
-        // 网页区域
+        // 网页区域：占据上方剩余空间
         web = new WebView(this);
 
         web.getSettings().setJavaScriptEnabled(true);
@@ -123,13 +79,13 @@ public class BrowserActivity extends Activity {
             public boolean shouldOverrideUrlLoading(
                     WebView view,
                     WebResourceRequest request) {
-
                 return false;
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 address.setText(url);
+                address.setSelection(address.getText().length());
             }
         });
 
@@ -155,11 +111,13 @@ public class BrowserActivity extends Activity {
 
                 } catch (Exception e) {
                     fileCallback = null;
+
                     Toast.makeText(
                             BrowserActivity.this,
                             "无法打开文件选择器",
                             Toast.LENGTH_SHORT
                     ).show();
+
                     return false;
                 }
             }
@@ -181,9 +139,7 @@ public class BrowserActivity extends Activity {
                 content.setVisibility(View.GONE);
 
                 root.addView(customView,
-                        new FrameLayout.LayoutParams(
-                                -1, -1
-                        ));
+                        new FrameLayout.LayoutParams(-1, -1));
             }
 
             @Override
@@ -203,6 +159,7 @@ public class BrowserActivity extends Activity {
                 }
             }
         });
+
         // 下载文件
         web.setDownloadListener(new DownloadListener() {
 
@@ -272,12 +229,63 @@ public class BrowserActivity extends Activity {
                 }
             }
         });
-        
 
         content.addView(web,
-                new LinearLayout.LayoutParams(
-                        -1, 0, 1
-                ));
+                new LinearLayout.LayoutParams(-1, 0, 1));
+
+        // 底部固定控制区
+        bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.VERTICAL);
+        bottomBar.setPadding(dp(5), dp(4), dp(5), dp(4));
+        bottomBar.setBackgroundColor(Color.rgb(235, 238, 243));
+
+        // 第一行：网址输入框 + 打开按钮
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
+
+        address = new EditText(this);
+        address.setSingleLine(true);
+        address.setTextSize(14);
+        address.setHint("输入网址或搜索内容");
+        address.setSelectAllOnFocus(true);
+        address.setImeOptions(EditorInfo.IME_ACTION_GO);
+
+        row1.addView(address,
+                new LinearLayout.LayoutParams(0, dp(48), 1));
+
+        Button go = makeButton("打开");
+
+        row1.addView(go,
+                new LinearLayout.LayoutParams(dp(76), dp(48)));
+
+        go.setOnClickListener(v -> loadAddress());
+
+        // 键盘回车 / 前往键打开网址
+        address.setOnEditorActionListener((v, actionId, event) -> {
+            loadAddress();
+            return true;
+        });
+
+        bottomBar.addView(row1);
+
+        // 第二行：只保留刷新按钮
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setGravity(Gravity.CENTER);
+
+        Button refresh = makeButton("刷新");
+
+        row2.addView(refresh,
+                new LinearLayout.LayoutParams(-1, dp(42)));
+
+        refresh.setOnClickListener(v -> web.reload());
+
+        bottomBar.addView(row2);
+
+        // 内容在上，底栏在下
+        content.addView(bottomBar,
+                new LinearLayout.LayoutParams(-1, -2));
 
         root.addView(content,
                 new FrameLayout.LayoutParams(-1, -1));
@@ -290,21 +298,6 @@ public class BrowserActivity extends Activity {
         b.setText(text);
         b.setAllCaps(false);
         return b;
-    }
-
-    private void addNavButton(
-            LinearLayout row,
-            String label,
-            Runnable action) {
-
-        Button b = makeButton(label);
-
-        row.addView(b,
-                new LinearLayout.LayoutParams(
-                        0, dp(46), 1
-                ));
-
-        b.setOnClickListener(v -> action.run());
     }
 
     private void loadHome() {
@@ -320,19 +313,28 @@ public class BrowserActivity extends Activity {
 
         if (!url.contains("://")) {
 
-            if (url.contains(".") &&
-                    !url.contains(" ")) {
-
+            if (url.contains(".") && !url.contains(" ")) {
                 url = "https://" + url;
-
             } else {
-
                 url = "https://www.baidu.com/s?wd=" +
                         Uri.encode(url);
             }
         }
 
         web.loadUrl(url);
+
+        // 收起键盘
+        InputMethodManager imm =
+                (InputMethodManager) getSystemService(
+                        Context.INPUT_METHOD_SERVICE
+                );
+
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(
+                    address.getWindowToken(), 0);
+        }
+
+        address.clearFocus();
     }
 
     @Override
@@ -383,8 +385,14 @@ public class BrowserActivity extends Activity {
     public void onBackPressed() {
 
         if (customView != null) {
-            web.getWebChromeClient()
-                    .onHideCustomView();
+
+            if (web != null) {
+                web.evaluateJavascript(
+                        "document.exitFullscreen && document.exitFullscreen()",
+                        null
+                );
+            }
+
             return;
         }
 
@@ -412,3 +420,4 @@ public class BrowserActivity extends Activity {
         super.onDestroy();
     }
 }
+
