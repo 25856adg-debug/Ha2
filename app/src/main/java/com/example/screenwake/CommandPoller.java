@@ -2,9 +2,6 @@ package com.example.screenwake;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Handler;
-import android.os.Looper;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -23,12 +20,9 @@ import java.util.concurrent.TimeUnit;
 public class CommandPoller {
 
     private static final String TAG = "CommandPoller";
-    private static final long WINDOW_MS = 60L * 60L * 1000L;
     private static final long POLL_SECONDS = 10L;
 
     private static volatile boolean RUNNING = false;
-    private static volatile long endTime = 0L;
-
     private static ScheduledExecutorService executor;
     private static ScheduledFuture<?> future;
 
@@ -41,107 +35,79 @@ public class CommandPoller {
         return s.startsWith("http://") || s.startsWith("https://");
     }
 
-    // ================= 上传完成后，开启一小时指令接收窗口 =================
-    public static synchronized void startWindow(Context context) {
-        Context app = context.getApplicationContext();
-
-        stopWindowInternal();
-
-        String server = ConfigManager.getServerUrl(app);
-        String token = ConfigManager.getDeviceToken(app);
-
-        if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
-            ConfigManager.clearCommandWindow(app);
-            LogManager.log(app, "指令轮询未启动：服务器地址或Token无效");
-            CycleService.stop(app);
-            return;
-        }
-
-        long deadline = System.currentTimeMillis() + WINDOW_MS;
-
-        ConfigManager.setCommandWindowEnd(app, deadline);
-
-        startPollingUntil(app, deadline);
-
-        LogManager.log(app, "指令接收窗口已开启，持续一小时，每10秒轮询");
+    // 常驻轮询的占位期限（仅为兼容旧配置键，不再有过期判断）
+    private static long persistDeadline() {
+        return System.currentTimeMillis() + 3650L * 24L * 60L * 60L * 1000L;
     }
 
-    // ================= 进程或前台服务重新创建时，恢复剩余时间 =================
-    public static synchronized void restoreWindow(Context context) {
+    // ================= 上报成功后调用：确保轮询在跑 =================
+    public static synchronized void startWindow(Context context) {
+        start(context);
+    }
+
+    // ================= 正式入口：常驻轮询 =================
+    public static synchronized void start(Context context) {
         Context app = context.getApplicationContext();
 
         if (RUNNING) {
             return;
         }
 
-        long deadline = ConfigManager.getCommandWindowEnd(app);
-
-        if (deadline <= System.currentTimeMillis()) {
-            ConfigManager.clearCommandWindow(app);
-            LogManager.log(app, "指令接收窗口已过期");
-            CycleService.stop(app);
-            return;
-        }
-
         String server = ConfigManager.getServerUrl(app);
         String token = ConfigManager.getDeviceToken(app);
 
         if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
-            ConfigManager.clearCommandWindow(app);
-            LogManager.log(app, "恢复指令窗口失败：服务器地址或Token无效");
-            CycleService.stop(app);
+            LogManager.log(app, "指令轮询未启动：服务器地址或Token无效");
             return;
         }
 
-        startPollingUntil(app, deadline);
+        ConfigManager.setCommandWindowEnd(app, persistDeadline());
 
-        long remaining = deadline - System.currentTimeMillis();
-        LogManager.log(app, "指令轮询已恢复，剩余 "
-                + (remaining / 1000) + " 秒");
-    }
-
-    private static synchronized void startPollingUntil(
-            Context context, long deadline) {
-
-        stopWindowInternal();
-
-        endTime = deadline;
         RUNNING = true;
-
         executor = Executors.newSingleThreadScheduledExecutor();
-
         future = executor.scheduleWithFixedDelay(
-                () -> pollOnce(context.getApplicationContext()),
+                () -> pollOnce(app),
                 0,
                 POLL_SECONDS,
                 TimeUnit.SECONDS
         );
+
+        LogManager.log(app, "指令轮询已启动，常驻运行，每 " + POLL_SECONDS + " 秒一次");
+    }
+
+    // ================= 进程或前台服务重建时恢复 =================
+    public static synchronized void restoreWindow(Context context) {
+        start(context);
+    }
+
+    // 前后台切换时调用，已在跑就什么都不做
+    public static synchronized void ensureRunning(Context context) {
+        start(context);
     }
 
     public static boolean isRunning() {
         return RUNNING;
     }
 
-    // ================= 主动停止窗口 =================
-    public static synchronized void stopWindow(Context context) {
-        Context app = context.getApplicationContext();
-
-        stopWindowInternal();
-        ConfigManager.clearCommandWindow(app);
-
-        LogManager.log(app, "指令接收窗口已手动停止");
-        CycleService.stop(app);
+    // 只停线程，不改配置
+    public static synchronized void stopPolling() {
+        stopInternal();
     }
 
-    private static synchronized void stopWindowInternal() {
-        RUNNING = false;
-        endTime = 0L;
+    // ================= 主动停止 =================
+    public static synchronized void stopWindow(Context context) {
+        Context app = context.getApplicationContext();
+        stopInternal();
+        ConfigManager.clearCommandWindow(app);
+        LogManager.log(app, "指令轮询已手动停止");
+    }
 
+    private static synchronized void stopInternal() {
+        RUNNING = false;
         if (future != null) {
             future.cancel(true);
             future = null;
         }
-
         if (executor != null) {
             executor.shutdownNow();
             executor = null;
@@ -150,13 +116,7 @@ public class CommandPoller {
 
     // ================= 单次轮询 =================
     private static void pollOnce(Context context) {
-
         if (!RUNNING) {
-            return;
-        }
-
-        if (System.currentTimeMillis() >= endTime) {
-            finishWindow(context);
             return;
         }
 
@@ -166,7 +126,7 @@ public class CommandPoller {
 
         if (!isServerValid(server) || token == null || token.trim().isEmpty()) {
             LogManager.log(context, "轮询停止：服务器配置无效");
-            finishWindow(context);
+            stopInternal();
             return;
         }
 
@@ -194,7 +154,6 @@ public class CommandPoller {
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
-
             conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
@@ -210,7 +169,6 @@ public class CommandPoller {
             }
 
             int code = conn.getResponseCode();
-
             InputStream input = code >= 200 && code < 300
                     ? conn.getInputStream()
                     : conn.getErrorStream();
@@ -230,15 +188,10 @@ public class CommandPoller {
                 conn.disconnect();
             }
         }
-
-        if (RUNNING && System.currentTimeMillis() >= endTime) {
-            finishWindow(context);
-        }
     }
 
     // ================= 处理指令 =================
     private static void handleCommands(Context context, String response) {
-
         try {
             JSONObject root = new JSONObject(response);
             JSONArray commands = root.optJSONArray("commands");
@@ -251,25 +204,21 @@ public class CommandPoller {
                     "screenwake_commands", Context.MODE_PRIVATE);
 
             for (int i = 0; i < commands.length(); i++) {
-
-                if (!RUNNING || System.currentTimeMillis() >= endTime) {
+                if (!RUNNING) {
                     break;
                 }
 
                 JSONObject command = commands.optJSONObject(i);
-
                 if (command == null) {
                     continue;
                 }
 
                 String commandId = command.optString("id", "").trim();
-
                 if (commandId.isEmpty()) {
                     continue;
                 }
 
                 String key = "cmd_" + commandId;
-
                 if (prefs.getBoolean(key, false)) {
                     continue;
                 }
@@ -335,7 +284,6 @@ public class CommandPoller {
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
-
             conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Device-Token", token);
@@ -351,13 +299,10 @@ public class CommandPoller {
             }
 
             int code = conn.getResponseCode();
-
-            LogManager.log(context, "指令结果回传：" + commandId
-                    + "，HTTP " + code);
+            LogManager.log(context, "指令结果回传：" + commandId + "，HTTP " + code);
 
         } catch (Exception e) {
-            LogManager.log(context, "指令结果回传失败："
-                    + e.getMessage());
+            LogManager.log(context, "指令结果回传失败：" + e.getMessage());
         } finally {
             if (conn != null) {
                 conn.disconnect();
@@ -366,7 +311,6 @@ public class CommandPoller {
     }
 
     private static String readResponse(InputStream input) throws Exception {
-
         if (input == null) {
             return "";
         }
@@ -375,9 +319,7 @@ public class CommandPoller {
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(input, StandardCharsets.UTF_8))) {
-
             String line;
-
             while ((line = reader.readLine()) != null) {
                 result.append(line);
             }
@@ -385,21 +327,7 @@ public class CommandPoller {
 
         return result.toString();
     }
-
-    private static synchronized void finishWindow(Context context) {
-
-        if (!RUNNING) {
-            return;
-        }
-
-        stopWindowInternal();
-
-        ConfigManager.clearCommandWindow(context);
-
-        LogManager.log(context, "一小时指令接收时间结束，轮询已关闭");
-
-        CycleService.stop(context);
-    }
 }
+
 
 
