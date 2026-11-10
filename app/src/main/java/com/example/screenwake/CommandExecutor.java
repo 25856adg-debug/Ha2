@@ -16,7 +16,6 @@ public final class CommandExecutor {
         );
     }
 
-    // ================= 根据本机txt白名单校验指令 =================
     public static void execute(
             Context context,
             JSONObject command,
@@ -36,39 +35,31 @@ public final class CommandExecutor {
             return;
         }
 
-        //【重点：每次收到指令实时读取磁盘白名单文件】
         Set<String> allowActions = LogManager.readActionWhitelist(c);
         if (!allowActions.contains(action)) {
-            LogManager.log(c, LogManager.SUB_COMMAND, "指令拒绝，不在本机白名单内 action="+action);
-            finish(callback, commandId, false, "指令["+action+"]不在本机白名单，拒绝执行");
+            LogManager.log(c, LogManager.SUB_COMMAND, "指令拒绝，不在本机action白名单内 action=" + action);
+            finish(callback, commandId, false, "指令[" + action + "]不在本机白名单，拒绝执行");
             return;
         }
 
         try {
             switch (action) {
-
                 case "start_verify":
                     startVerify(c, commandId, callback);
                     break;
-
                 case "get_status":
                     getStatus(c, commandId, callback);
                     break;
-
                 case "get_logs":
                     getLogs(c, commandId, callback);
                     break;
-
                 case "set_interval":
                     setInterval(c, command, commandId, callback);
                     break;
-
                 default:
-                    finish(callback, commandId, false,
-                            "不支持的指令：" + action);
+                    finish(callback, commandId, false, "不支持的指令：" + action);
                     break;
             }
-
         } catch (Exception e) {
             LogManager.log(c, LogManager.SUB_COMMAND,
                     "指令执行异常，ID：" + commandId
@@ -78,7 +69,6 @@ public final class CommandExecutor {
         }
     }
 
-    // ================= 启动验证：回一条身份确认 =================
     private static void startVerify(
             Context c,
             String commandId,
@@ -110,7 +100,7 @@ public final class CommandExecutor {
 
         java.text.SimpleDateFormat fmt =
                 new java.text.SimpleDateFormat(
-                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA);
+                        "yyyy‑MM‑dd HH:mm:ss", java.util.Locale.CHINA);
         result.put("time", fmt.format(new java.util.Date()));
 
         LogManager.log(c, LogManager.SUB_COMMAND, "启动验证完成，设备：" + info.optString("model", ""));
@@ -118,7 +108,6 @@ public final class CommandExecutor {
         finish(callback, commandId, true, result.toString());
     }
 
-    // ================= 读取设备状态：返回当前真实状态 =================
     private static void getStatus(
             Context c,
             String commandId,
@@ -140,7 +129,6 @@ public final class CommandExecutor {
         finish(callback, commandId, true, status.toString());
     }
 
-    // ================= 获取运行日志，限制回传长度 =================
     private static void getLogs(
             Context c,
             String commandId,
@@ -162,7 +150,6 @@ public final class CommandExecutor {
         finish(callback, commandId, true, logs);
     }
 
-    // ================= 设置定时周期：设置完直接开始发 =================
     private static void setInterval(
             Context c,
             JSONObject command,
@@ -208,7 +195,6 @@ public final class CommandExecutor {
                         + hours + "小时" + minutes + "分钟，已开始按此周期向服务器发送");
     }
 
-    // ================= 统一返回执行结果 =================
     private static void finish(
             Callback callback,
             String commandId,
