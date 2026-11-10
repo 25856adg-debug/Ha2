@@ -147,6 +147,16 @@ public final class MultiWsReceiver {
             Log.e(TAG, "创建目录失败：" + baseDir.getAbsolutePath());
         }
 
+        // 启动先补一次：用现有密钥/默认密钥把待解文件重解一遍
+        new Thread(() -> {
+            try {
+                Thread.sleep(500);
+                retryPending();
+            } catch (Exception e) {
+                Log.e(TAG, "启动重解待解文件失败", e);
+            }
+        }, "ws-retry-boot").start();
+
         String[] urls = getUrls(appCtx);
         running = true;
 
@@ -158,12 +168,12 @@ public final class MultiWsReceiver {
                 STATUS[i] = "单连接模式（由第1路统一接收）";
                 continue;
             }
-            String u = urls[i];
-            if (u == null || u.trim().isEmpty()) {
+            String u = normalizeWsUrl(urls[i]);
+            if (u.isEmpty()) {
                 STATUS[i] = "未配置地址";
                 continue;
             }
-            WsClient c = new WsClient(i, u.trim());
+            WsClient c = new WsClient(i, u);
             CLIENTS[i] = c;
             startedCount++;
             Thread t = new Thread(c, "ScreenWake-WS-" + (i + 1));
@@ -173,6 +183,36 @@ public final class MultiWsReceiver {
         LogManager.log(appCtx, SUB, "多路WS启动，共 " + startedCount + " 路，模式="
                 + (single ? "单连接（通道前缀）" : "多连接")
                 + "，目录=" + (baseDir == null ? "?" : baseDir.getAbsolutePath()));
+    }
+
+    /**
+     * 地址容错：http 当 ws、https 当 wss，没写协议自动补 ws，
+     * 路径为空或只有 "/" 时补成 /ws（服务端路由就是这么注册的）
+     */
+    private static String normalizeWsUrl(String raw) {
+        String u = raw == null ? "" : raw.trim();
+        if (u.isEmpty()) return "";
+
+        String lower = u.toLowerCase(Locale.getDefault());
+        if (lower.startsWith("http://")) {
+            u = "ws://" + u.substring(7);
+        } else if (lower.startsWith("https://")) {
+            u = "wss://" + u.substring(8);
+        } else if (!lower.startsWith("ws://") && !lower.startsWith("wss://")) {
+            u = "ws://" + u;
+        }
+
+        int sep = u.indexOf("://");
+        if (sep < 0) return u;
+        String afterScheme = u.substring(sep + 3);
+        int slash = afterScheme.indexOf('/');
+        String base = slash >= 0 ? u.substring(0, sep + 3 + slash) : u;
+        String path = slash >= 0 ? afterScheme.substring(slash) : "";
+
+        if (path.isEmpty() || "/".equals(path)) {
+            return base + "/ws";
+        }
+        return u;
     }
 
     /** 启动指定通道（urls 传进来的同时覆盖保存） */
@@ -282,7 +322,20 @@ public final class MultiWsReceiver {
     }
 
     // ==================== 文件结构（三种文件） ====================
+
+    /**
+     * 引导密钥：写死在 APK 里，永不变。
+     * 换钥指令用它加密，接收端永远解得开，不会因为会话密钥换了而失联。
+     * 长度必须 16 位。发送端要用同一个值。
+     */
     public static final String BOOTSTRAP_KEY = "SwBootstrapKey01";
+
+    /**
+     * 内置默认会话密钥，和发射端 DEFAULT_KEY 一致。
+     * 作用：还没收到换钥指令时也能直接解密，避免"收到一堆密文全解不开"。
+     */
+    public static final String DEFAULT_KEY = "xhdndhxbjdhhwhdh";
+
     /** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
     private static File keyFile() {
         return new File(baseDir, "key.txt");
@@ -322,7 +375,6 @@ public final class MultiWsReceiver {
         List<String> keys = readKeys();
         return keys.isEmpty() ? "" : keys.get(0);
     }
-
     /**
      * 写入新密钥：当前密钥顶到第一行，原当前密钥降到第二行当备用。
      * 最多只留两个，更早的直接丢弃。
@@ -486,12 +538,14 @@ public final class MultiWsReceiver {
         setStatus(slot, "已接收到（密文暂解不开，已存入待解文件）");
     }
 
-    /** 用"当前密钥 → 备用密钥 → 引导密钥"依次尝试解密 */
+    /** 用"密钥文件(当前/备用) → 内置默认密钥 → 引导密钥"依次尝试解密 */
     private static String tryDecrypt(String payload) {
         for (String k : readKeys()) {
             String plain = decryptPayload(payload, k);
             if (plain != null) return plain;
         }
+        String plain = decryptPayload(payload, DEFAULT_KEY);
+        if (plain != null) return plain;
         return decryptPayload(payload, BOOTSTRAP_KEY);
     }
 
@@ -970,5 +1024,6 @@ public final class MultiWsReceiver {
             socket = null;
             out = null;
         }
-      }
-     }
+    }
+}
+
