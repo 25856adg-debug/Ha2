@@ -95,7 +95,7 @@ public class MultiWsActivity extends Activity {
         root.addView(title, lp(0, 10));
 
         TextView tip = new TextView(this);
-        tip.setText("五路独立连接，全程只收密文；解出来的明文按通道分别存文件。");
+        tip.setText("五路独立连接，全程只收密文；解出来的明文按通道分别存文件。\n地址填 http:// 也能连，会自动转 ws 并补上 /ws。");
         tip.setTextColor(COLOR_SUB);
         tip.setTextSize(13);
         tip.setGravity(Gravity.CENTER);
@@ -134,7 +134,7 @@ public class MultiWsActivity extends Activity {
             root.addView(label, lp(0, 6));
 
             EditText et = new EditText(this);
-            et.setHint(i == 0 ? "ws://170.106.188.189:3359/ws1" : "留空表示不启用");
+            et.setHint(i == 0 ? "ws://IP:3360/ws 或 http://IP:3360" : "留空表示不启用");
             et.setHintTextColor(Color.rgb(110, 120, 135));
             et.setTextColor(COLOR_TEXT);
             et.setTextSize(14);
@@ -323,3 +323,5 @@ public class MultiWsActivity extends Activity {
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }
 }
+
+
