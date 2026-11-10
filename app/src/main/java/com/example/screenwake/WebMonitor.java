@@ -628,6 +628,15 @@ if (s == null || s.isEmpty() || s.length() > 6) return false;
                 || m.contains("HTTP 403") || m.contains("HTTP 404")) {
 return "飞书地址错误（" + briefHttp(m) + "）";
         }
+        // 飞书业务错误码：19001/19021 = webhook 不合法
+        if (m.contains("\"code\":19001") || m.contains("\"code\":19021")
+                || m.contains("code\":19001") || m.contains("code\":19021")) {
+            return "飞书地址错误：webhook 不合法或被删除";
+        }
+        // 11246 / 200621 = 卡片 JSON 解析失败
+        if (m.contains("11246") || m.contains("200621")) {
+            return "发送失败：卡片格式错误（11246）";
+        }
         // 网络层问题
         if (m.contains("ConnectException") || m.contains("UnknownHost")
                 || m.contains("SocketTimeout") || m.contains("SSL")
@@ -643,7 +652,7 @@ return "飞书地址错误（" + briefHttp(m) + "）";
     private static String briefHttp(String m) {
         int i = m.indexOf("HTTP ");
         if (i < 0) return "HTTP ?";
-        int end = Math.min(m.length(), i + 9);
+int end = Math.min(m.length(), i + 9);
         return m.substring(i, end).trim();
     }
 
@@ -683,6 +692,4 @@ return "飞书地址错误（" + briefHttp(m) + "）";
         if (!sleeping) return 0;
         return Math.max(0, sleepEndTs - System.currentTimeMillis());
     }
-}
-
-
+    }
