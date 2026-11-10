@@ -1,9 +1,9 @@
 package com.example.screenwake;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import android.os.Handler;
+import android.os.Looper;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -28,6 +27,18 @@ public class CommandPoller {
     private static volatile boolean RUNNING = false;
     private static ScheduledExecutorService executor;
     private static ScheduledFuture<?> future;
+
+    // 回调接口：通知UI需要弹出服务器绑定确认（后台线程调用，切主线程）
+    public interface ServerBindNotifyCallback {
+        void needShowBindDialog(String remoteBindId, boolean isChanged);
+    }
+    private static ServerBindNotifyCallback mBindNotifyCallback;
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
+    public static void setServerBindNotifyCallback(ServerBindNotifyCallback cb) {
+        mBindNotifyCallback = cb;
+    }
+
     private CommandPoller() {}
 
     // ================= 服务器地址校验（http/https 都允许） =================
@@ -37,28 +48,16 @@ public class CommandPoller {
         return s.startsWith("http://") || s.startsWith("https://");
     }
 
-    // ================= 获取连接真实远端IP =================
-    private static String getConnectedIp(HttpURLConnection conn) {
-        try {
-            Socket socket = conn.getSocket();
-            if (socket != null && socket.getInetAddress() != null) {
-                return socket.getInetAddress().getHostAddress();
-            }
-        } catch (Exception ignored) {
+    // ================= 通知UI弹窗，切到主线程 =================
+    private static void notifyUiNeedBindDialog(final String bindId, final boolean isChanged) {
+        if(mBindNotifyCallback == null){
+            // APP不在前台，没有Activity接收，直接丢弃本次弹窗事件
+            return;
         }
-        return null;
-    }
-
-    // ================= 发送绑定确认UI广播 =================
-    private static void fireBindConfirmUi(Context c, String bindId, boolean isChanged) {
-        Intent intent = new Intent("com.example.screenwake.BIND_CONFIRM");
-        intent.putExtra("server_bind_id", bindId);
-        intent.putExtra("is_changed", isChanged);
-        LocalBroadcastManager.getInstance(c).sendBroadcast(intent);
+        MAIN_HANDLER.post(() -> mBindNotifyCallback.needShowBindDialog(bindId, isChanged));
     }
 
     // ================= 兼容旧调用：上报成功后调用 =================
-    // 不再开「一小时窗口」，改为确保轮询常驻
     public static synchronized void startWindow(Context context) {
         start(context);
     }
@@ -72,7 +71,6 @@ public class CommandPoller {
     public static synchronized void start(Context context) {
         Context app = context.getApplicationContext();
         if (RUNNING && executor != null && !executor.isShutdown()) {
-            // 已经在跑，直接返回，不重置计时
             return;
         }
         String server = ConfigManager.getServerUrl(app);
@@ -158,11 +156,11 @@ public class CommandPoller {
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
-            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+            conn.setRequestProperty("Content‑Type", "text/plain; charset=utf‑8");
             conn.setRequestProperty("Accept", "application/json");
-            conn.setRequestProperty("X-Device-Token", token);
-            conn.setRequestProperty("X-Device-Id", deviceId);
-            conn.setRequestProperty("X-Aes-Iv", ivB64);
+            conn.setRequestProperty("X‑Device‑Token", token);
+            conn.setRequestProperty("X‑Device‑Id", deviceId);
+            conn.setRequestProperty("X‑Aes‑Iv", ivB64);
             byte[] data = encBody.getBytes(StandardCharsets.UTF_8);
             conn.setFixedLengthStreamingMode(data.length);
             try (OutputStream os = conn.getOutputStream()) {
@@ -175,7 +173,7 @@ public class CommandPoller {
                     : conn.getErrorStream();
             String response = readResponse(input);
             if (code >= 200 && code < 300) {
-                handleCommands(context, response, conn, url);
+                handleCommands(context, response, url);
             } else {
                 LogManager.log(context, LogManager.SUB_COMMAND,
                         "指令轮询HTTP失败：" + code + " " + response);
@@ -189,8 +187,8 @@ public class CommandPoller {
         }
     }
 
-    // ================= 处理指令，增加服务器身份校验（IP OR bindId） =================
-    private static void handleCommands(Context context, String response, HttpURLConnection conn, URL url) {
+    // ================= 处理指令，增加服务器身份校验（IP/域名OR bindId） =================
+    private static void handleCommands(Context context, String response, URL url) {
         try {
             JSONObject root = new JSONObject(response);
             // 取出服务器标识码
@@ -203,16 +201,10 @@ public class CommandPoller {
             // 读取本地配置
             Set<String> allowServerSet = LogManager.readServerAllowList(context);
             String trustedBindId = LogManager.getTrustedServerBindId(context);
-            String realIp = getConnectedIp(conn);
             String host = url.getHost();
 
-            // IP校验
-            boolean okIp = false;
-            if (realIp != null && allowServerSet.contains(realIp)) {
-                okIp = true;
-            } else if (allowServerSet.contains(host)) {
-                okIp = true;
-            }
+            // IP/域名白名单校验（使用url的host，不再调用getSocket）
+            boolean okIp = allowServerSet.contains(host);
 
             // bindId校验
             boolean okBind = false;
@@ -223,13 +215,13 @@ public class CommandPoller {
             // 或逻辑：任意一个通过放行
             if (okIp || okBind) {
                 LogManager.log(context, LogManager.SUB_COMMAND,
-                        String.format("服务端身份校验通过 okIp=%b okBind=%b", okIp, okBind));
+                        String.format("服务端身份校验通过 okIp=%b okBind=%b host=%s", okIp, okBind, host));
             } else {
                 LogManager.log(context, LogManager.SUB_COMMAND,
-                        String.format("服务端身份校验失败 okIp=%b okBind=%b remoteBindId=%s realIp=%s",
-                                okIp, okBind, remoteBindId, realIp));
+                        String.format("服务端身份校验失败 okIp=%b okBind=%b remoteBindId=%s host=%s",
+                                okIp, okBind, remoteBindId, host));
                 boolean isChanged = trustedBindId != null;
-                fireBindConfirmUi(context, remoteBindId, isChanged);
+                notifyUiNeedBindDialog(remoteBindId, isChanged);
                 return;
             }
 
@@ -317,11 +309,11 @@ public class CommandPoller {
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setInstanceFollowRedirects(false);
-            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+            conn.setRequestProperty("Content‑Type", "text/plain; charset=utf‑8");
             conn.setRequestProperty("Accept", "application/json");
-            conn.setRequestProperty("X-Device-Token", token);
-            conn.setRequestProperty("X-Device-Id", deviceId);
-            conn.setRequestProperty("X-Aes-Iv", ivB64);
+            conn.setRequestProperty("X‑Device‑Token", token);
+            conn.setRequestProperty("X‑Device‑Id", deviceId);
+            conn.setRequestProperty("X‑Aes‑Iv", ivB64);
             byte[] data = encBody.getBytes(StandardCharsets.UTF_8);
             conn.setFixedLengthStreamingMode(data.length);
             try (OutputStream os = conn.getOutputStream()) {
@@ -354,6 +346,4 @@ public class CommandPoller {
         }
         return result.toString();
     }
-    }
-
-
+}
