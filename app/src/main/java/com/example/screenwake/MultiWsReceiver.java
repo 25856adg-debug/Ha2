@@ -37,7 +37,7 @@ import javax.net.ssl.SSLSocketFactory;
  * ================= 协议约定（全程密文，无明文字节） =================
  * 1) 数据消息（用"当前密钥"加密）
  *      {"iv":"xxxx","cipher":"xxxx"}  或  ivBase64:cipherBase64
- *    解密后明文为：
+*    解密后明文为：
  *      {"t":"data","d":{ ...任意JSON... }}     或  任意文本
  *
  * 2) 换钥指令（也用密文发送，用"引导密钥"加密，密钥不裸奔）
@@ -67,7 +67,7 @@ public final class MultiWsReceiver {
     public static final int SLOTS = 5;
 
     private static final String PREF_NAME = "ScreenWakeWs";
-    private static final String KEY_URL = "url_";
+private static final String KEY_URL = "url_";
     private static final String KEY_AES = "aes_";
     private static final String KEY_MODE = "mode";
 
@@ -76,11 +76,16 @@ public final class MultiWsReceiver {
     /** 单连接模式：只连 url_1，消息前缀带通道号，如 1|iv:cipher、kk|2|密钥 */
     public static final String MODE_SINGLE = "single";
 
+    /** 轮询模式：不开长连接，每 2 秒用 HTTP 拉一次新密文（最稳，推荐） */
+    public static final String MODE_POLL = "poll";
+
     private static final String SUB = "ws/";
 
     private static final String DIR_NAME = "wsdata";
 
     private static final WsClient[] CLIENTS = new WsClient[SLOTS];
+
+    private static volatile PollClient POLL_CLIENT;
     private static final String[] STATUS = new String[SLOTS];
 
     private static volatile boolean running = false;
@@ -94,8 +99,7 @@ public final class MultiWsReceiver {
             STATUS[i] = "未启动";
         }
     }
-
-    // ==================== 对外接口 ====================
+// ==================== 对外接口 ====================
 
     /** 保存 5 路地址（空字符串表示该路不启用） */
     public static void setUrls(Context ctx, String[] urls) {
@@ -121,12 +125,14 @@ public final class MultiWsReceiver {
 
     /** 设置模式：MODE_MULTI（5条连接）/ MODE_SINGLE（1条连接+通道前缀） */
     public static void setMode(Context ctx, String mode) {
-        String m = MODE_SINGLE.equals(mode) ? MODE_SINGLE : MODE_MULTI;
-        pref(ctx).edit().putString(KEY_MODE, m).apply();
+        String m = MODE_POLL.equals(mode) ? MODE_POLL
+                : (MODE_SINGLE.equals(mode) ? MODE_SINGLE : MODE_MULTI);
+pref(ctx).edit().putString(KEY_MODE, m).apply();
     }
 
     public static String getMode(Context ctx) {
         String m = pref(ctx).getString(KEY_MODE, MODE_MULTI);
+        if (MODE_POLL.equals(m)) return MODE_POLL;
         return MODE_SINGLE.equals(m) ? MODE_SINGLE : MODE_MULTI;
     }
 
@@ -150,7 +156,7 @@ public final class MultiWsReceiver {
         // 启动先补一次：用现有密钥/默认密钥把待解文件重解一遍
         new Thread(() -> {
             try {
-                Thread.sleep(500);
+Thread.sleep(500);
                 retryPending();
             } catch (Exception e) {
                 Log.e(TAG, "启动重解待解文件失败", e);
@@ -161,10 +167,28 @@ public final class MultiWsReceiver {
         running = true;
 
         boolean single = MODE_SINGLE.equals(getMode(appCtx));
+        boolean poll = MODE_POLL.equals(getMode(appCtx));
+
+        if (poll) {
+            String u = normalizeWsUrl(urls[0]);
+            if (u.isEmpty()) {
+                STATUS[0] = "未配置地址";
+                LogManager.log(appCtx, SUB, "轮询模式：第1路地址为空，未启动");
+                return;
+            }
+            POLL_CLIENT = new PollClient(0, u);
+            Thread pt = new Thread(POLL_CLIENT, "ScreenWake-POLL");
+            pt.start();
+            for (int i = 1; i < SLOTS; i++) {
+                STATUS[i] = "轮询模式（由第1路统一接收）";
+            }
+            LogManager.log(appCtx, SUB, "已启动轮询模式：" + u);
+            return;
+        }
 
         int startedCount = 0;
         for (int i = 0; i < SLOTS; i++) {
-            if (single && i > 0) {
+if (single && i > 0) {
                 STATUS[i] = "单连接模式（由第1路统一接收）";
                 continue;
             }
@@ -195,7 +219,7 @@ public final class MultiWsReceiver {
 
         String lower = u.toLowerCase(Locale.getDefault());
         if (lower.startsWith("http://")) {
-            u = "ws://" + u.substring(7);
+u = "ws://" + u.substring(7);
         } else if (lower.startsWith("https://")) {
             u = "wss://" + u.substring(8);
         } else if (!lower.startsWith("ws://") && !lower.startsWith("wss://")) {
@@ -224,6 +248,11 @@ public final class MultiWsReceiver {
     /** 停止全部通道 */
     public static synchronized void stop() {
         running = false;
+        PollClient pc = POLL_CLIENT;
+        if (pc != null) {
+            pc.active = false;
+POLL_CLIENT = null;
+        }
         for (int i = 0; i < SLOTS; i++) {
             WsClient c = CLIENTS[i];
             if (c != null) {
@@ -259,7 +288,7 @@ public final class MultiWsReceiver {
     /** 目录，方便打开查看文件 */
     public static String getDataDir() {
         return baseDir == null ? "" : baseDir.getAbsolutePath();
-    }
+}
 
     /** 密钥文件路径（全文件只保存一个密钥） */
     public static String getKeyPath() {
@@ -300,7 +329,7 @@ public final class MultiWsReceiver {
 
     /** 清空待解文件（返回清掉的条数） */
     public static int clearPending() {
-        if (baseDir == null) return 0;
+if (baseDir == null) return 0;
         int n = getPendingCount();
         try {
             File f = pendingFile();
@@ -335,8 +364,7 @@ public final class MultiWsReceiver {
      * 作用：还没收到换钥指令时也能直接解密，避免"收到一堆密文全解不开"。
      */
     public static final String DEFAULT_KEY = "xhdndhxbjdhhwhdh";
-
-    /** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
+/** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
     private static File keyFile() {
         return new File(baseDir, "key.txt");
     }
@@ -372,9 +400,10 @@ public final class MultiWsReceiver {
 
     /** 当前密钥（第一行） */
     private static String readKey() {
-        List<String> keys = readKeys();
+List<String> keys = readKeys();
         return keys.isEmpty() ? "" : keys.get(0);
     }
+
     /**
      * 写入新密钥：当前密钥顶到第一行，原当前密钥降到第二行当备用。
      * 最多只留两个，更早的直接丢弃。
@@ -405,7 +434,7 @@ public final class MultiWsReceiver {
         try {
             String line = now() + "|" + (slot + 1) + "|"
                     + payload.replace("\r", " ").replace("\n", " ");
-            File f = pendingFile();
+File f = pendingFile();
             if (!f.exists()) {
                 writeText(f, line + "\n");
             } else {
@@ -437,7 +466,7 @@ public final class MultiWsReceiver {
 
     private static String fileStamp() {
         return new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-    }
+}
 
     // ==================== 消息处理 ====================
 
@@ -465,7 +494,7 @@ public final class MultiWsReceiver {
                     }
                 } else {
                     int bar = m.indexOf('|');
-                    if (bar > 0) {
+if (bar > 0) {
                         int ch = parseSlot(m.substring(0, bar).trim());
                         if (ch >= 0) {
                             targetSlot = ch;
@@ -494,7 +523,7 @@ public final class MultiWsReceiver {
         try {
             int n = Integer.parseInt(t);
             if (n >= 1 && n <= SLOTS) return n - 1;
-        } catch (Exception ignored) {}
+} catch (Exception ignored) {}
         return -1;
     }
 
@@ -528,7 +557,7 @@ public final class MultiWsReceiver {
             String k = extractKeyFromPlain(t);
             if (k != null) {
                 writeKey(k);
-                int ok = retryPending();
+int ok = retryPending();
                 setStatus(slot, "已接收到（未加密密钥，新解出 " + ok + " 条）");
                 return;
             }
@@ -558,7 +587,7 @@ public final class MultiWsReceiver {
         if (t.regionMatches(true, 0, "kk", 0, 2)) {
             String body = t.substring(2).trim();
             while (body.startsWith(":") || body.startsWith("=")) {
-                body = body.substring(1).trim();
+body = body.substring(1).trim();
             }
             if (body.startsWith("{")) {
                 try {
@@ -586,7 +615,7 @@ public final class MultiWsReceiver {
     // ==================== 待解文件重解 ====================
 
     /** 用当前密钥把待解文件里能解的都解出来，解出后从待解文件删除 */
-    private static int retryPending() {
+private static int retryPending() {
         File f = pendingFile();
         if (!f.exists()) return 0;
 
@@ -619,7 +648,7 @@ public final class MultiWsReceiver {
             }
             saveDecrypted(slot, plain);
             ok++;
-        }
+}
 
         try {
             rewritePending(remain);
@@ -657,7 +686,7 @@ public final class MultiWsReceiver {
 
         // 去掉可能的 data: 前缀
         if (p.regionMatches(true, 0, "data:", 0, 5)) {
-            p = p.substring(5).trim();
+p = p.substring(5).trim();
         }
 
         if (p.startsWith("{")) {
@@ -688,8 +717,7 @@ public final class MultiWsReceiver {
         try {
             String[] parts = parsePayload(payload);
             if (parts == null) return null;
-
-            byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
+byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
             byte[] data = Base64.decode(parts[1], Base64.NO_WRAP);
 
             SecretKeySpec keySpec = new SecretKeySpec(
@@ -714,7 +742,7 @@ public final class MultiWsReceiver {
     }
 
     private static void writeText(File f, String content) throws Exception {
-        try (FileOutputStream fos = new FileOutputStream(f, false)) {
+try (FileOutputStream fos = new FileOutputStream(f, false)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));
             fos.flush();
         }
@@ -743,8 +771,7 @@ public final class MultiWsReceiver {
     }
 
     // ==================== 状态 ====================
-
-    private static void setStatus(int slot, String s) {
+private static void setStatus(int slot, String s) {
         if (slot >= 0 && slot < SLOTS) {
             STATUS[slot] = s;
         }
@@ -757,12 +784,109 @@ public final class MultiWsReceiver {
 
     // ==================== WebSocket 客户端（零依赖实现） ====================
 
+    /**
+     * 轮询客户端：不依赖长连接，每 2 秒用 HTTP 拉一次新密文。
+     * 服务端 /api/pull?ch=1&since=N 返回三部分：
+     *   第1行 key:<加密换钥指令>
+     *   第2行 last:<最新id>
+     *   其余为一条条密文
+     */
+    private static final class PollClient implements Runnable {
+
+        final int slot;
+        final String baseUrl;
+        volatile boolean active = true;
+        private long since = 0L;
+
+        PollClient(int slot, String wsUrl) {
+            this.slot = slot;
+            this.baseUrl = toHttpBase(wsUrl);
+        }
+
+        /** ws://h:p/ws → http://h:p/api/pull （长轮询，wait=15 秒） */
+        private static String toHttpBase(String u) {
+String s = u;
+            String lower = s.toLowerCase(Locale.getDefault());
+            if (lower.startsWith("ws://")) {
+                s = "http://" + s.substring(5);
+            } else if (lower.startsWith("wss://")) {
+                s = "https://" + s.substring(6);
+            }
+            int slash = s.indexOf('/', 8);
+            if (slash > 0) s = s.substring(0, slash);
+            return s + "/api/pull?ch=1&wait=15&since=";
+        }
+
+        @Override
+        public void run() {
+            setStatus(slot, "长轮询中（有消息立即下发）");
+            while (running && active) {
+                try {
+                    pollOnce();
+                } catch (Throwable t) {
+                    if (!active || !running) break;
+                    setStatus(slot, "轮询失败：" + t.getClass().getSimpleName()
+                            + "，1秒后重试");
+                    Log.w(TAG, "轮询失败：" + t.getMessage());
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+            setStatus(slot, "已停止");
+        }
+
+        private void pollOnce() throws Exception {
+            java.net.URL url = new java.net.URL(baseUrl + since);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(20000);
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            int code = conn.getResponseCode();
+            if (code != 200) throw new Exception("HTTP " + code);
+
+            java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            String keyLine = null;
+            String lastLine = null;
+            String line;
+            int got = 0;
+            while ((line = br.readLine()) != null) {
+if (line.startsWith("key:")) {
+                    keyLine = line.substring(4).trim();
+                } else if (line.startsWith("last:")) {
+                    lastLine = line.substring(5).trim();
+                } else if (!line.trim().isEmpty()) {
+                    dispatch(slot, line.trim());
+                    got++;
+                }
+            }
+            br.close();
+            conn.disconnect();
+
+            if (lastLine != null) {
+                try {
+                    since = Long.parseLong(lastLine);
+                } catch (NumberFormatException ignored) {}
+            }
+            if (keyLine != null && !keyLine.isEmpty()) {
+                dispatch(slot, keyLine);
+            }
+            if (got > 0) {
+                setStatus(slot, "已接收到 " + got + " 条（轮询）");
+            }
+        }
+    }
+
     private static final class WsClient implements Runnable {
 
         private static final String KEY_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
         final int slot;
-        final String url;
+final String url;
         volatile boolean active = true;
 
         private volatile Socket socket;
@@ -794,7 +918,7 @@ public final class MultiWsReceiver {
                 setStatus(slot, "等待重连（" + (backoff / 1000) + "秒后）");
                 try {
                     Thread.sleep(backoff);
-                } catch (InterruptedException ie) {
+} catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
                 }
@@ -802,8 +926,7 @@ public final class MultiWsReceiver {
             }
             setStatus(slot, "已停止");
         }
-
-        private void connectAndRead() throws Exception {
+private void connectAndRead() throws Exception {
             // 1. 解析地址
             String lower = url.toLowerCase(Locale.getDefault());
             String scheme;
@@ -941,7 +1064,14 @@ public final class MultiWsReceiver {
                         String msg = frag.toString();
                         frag.setLength(0);
                         if (!msg.trim().isEmpty()) {
-                            onMessage(slot, msg);
+                            // 单条消息处理异常绝不能把整条连接带下去
+                            try {
+                                onMessage(slot, msg);
+                            } catch (Throwable t) {
+                                Log.w(TAG, "处理消息失败（连接保持）：" + t.getClass().getSimpleName()
+                                        + " " + t.getMessage());
+                                setStatus(slot, "已接收到（处理异常，已跳过该条）");
+                            }
                         }
                     }
                 }
@@ -1026,4 +1156,3 @@ public final class MultiWsReceiver {
         }
     }
 }
-
