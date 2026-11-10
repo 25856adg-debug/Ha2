@@ -30,7 +30,7 @@ public class MultiWsActivity extends Activity {
     private static final int COLOR_TEXT = Color.rgb(220, 227, 234);
     private static final int COLOR_SUB = Color.rgb(150, 165, 180);
     private static final int COLOR_ACCENT = Color.rgb(100, 180, 255);
-private static final int COLOR_OK = Color.rgb(120, 210, 140);
+    private static final int COLOR_OK = Color.rgb(120, 210, 140);
     private static final int COLOR_WARN = Color.rgb(240, 190, 90);
 
     private final EditText[] urlInputs = new EditText[MultiWsReceiver.SLOTS];
@@ -59,7 +59,7 @@ private static final int COLOR_OK = Color.rgb(120, 210, 140);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(22), dp(18), dp(30));
-root.setBackgroundColor(COLOR_BG);
+        root.setBackgroundColor(COLOR_BG);
         sv.addView(root);
         setContentView(sv);
 
@@ -97,7 +97,7 @@ root.setBackgroundColor(COLOR_BG);
         TextView tip = new TextView(this);
         tip.setText("五路独立连接，全程只收密文；解出来的明文按通道分别存文件。\n地址填 http:// 也能连，会自动转 ws 并补上 /ws。");
         tip.setTextColor(COLOR_SUB);
-tip.setTextSize(13);
+        tip.setTextSize(13);
         tip.setGravity(Gravity.CENTER);
         root.addView(tip, lp(0, 16));
     }
@@ -126,7 +126,7 @@ tip.setTextSize(13);
             refreshStatus();
             toast("已切换到单连接模式（只连第1个地址）");
         });
-}
+    }
 
     private void buildUrls(LinearLayout root) {
         addSection(root, "五路地址");
@@ -154,7 +154,7 @@ tip.setTextSize(13);
 
     private void buildActions(LinearLayout root) {
         addButton(root, "保存地址", () -> {
-String[] urls = collectUrls();
+            String[] urls = collectUrls();
             MultiWsReceiver.setUrls(this, urls);
             toast("地址已保存");
         });
@@ -184,7 +184,7 @@ String[] urls = collectUrls();
         summaryView.setTextColor(COLOR_TEXT);
         summaryView.setTextSize(14);
         summaryView.setGravity(Gravity.CENTER);
-root.addView(summaryView, lp(0, 8));
+        root.addView(summaryView, lp(0, 8));
 
         for (int i = 0; i < MultiWsReceiver.SLOTS; i++) {
             TextView tv = new TextView(this);
@@ -213,12 +213,35 @@ root.addView(summaryView, lp(0, 8));
             if (p.isEmpty()) {
                 toast("请先启动一次，目录才会生成");
                 return;
-}
+            }
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) {
                 cm.setPrimaryClip(ClipData.newPlainText("wsdata", p));
                 toast("已复制：" + p);
             }
+        });
+        addButton(root, "查看已解文件（最近10条）", () -> {
+            String txt = MultiWsReceiver.previewDecrypted(10, 2000);
+            new AlertDialog.Builder(this)
+                    .setTitle("已解文件")
+                    .setMessage(txt)
+                    .setPositiveButton("关闭", null)
+                    .show();
+        });
+        addButton(root, "申请所有文件访问权限", () -> {
+            if (MultiWsReceiver.hasAllFilesAccess()) {
+                toast("已经有权限了，直接点“保存并启动”即可");
+                return;
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle("申请所有文件访问权限")
+                    .setMessage("下一屏把开关拨到“允许”，回来强行停止 App 再重开。只有拿到这个权限，"
+                            + "文件管理器才能直接打开 ScreenWake 文件夹。不申请也能用，"
+                            + "内容用上面的“查看已解文件”看。")
+                    .setPositiveButton("去设置", (d, w) ->
+                            MultiWsReceiver.requestAllFilesAccess(this))
+                    .setNegativeButton("取消", null)
+                    .show();
         });
         addButton(root, "清空待解文件", () -> new AlertDialog.Builder(this)
                 .setTitle("清空待解文件")
@@ -239,7 +262,7 @@ root.addView(summaryView, lp(0, 8));
 
         if (summaryView != null) {
             summaryView.setText(MultiWsReceiver.isRunning()
-? ("运行中　待解密文 " + pending + " 条　已解文件 " + done + " 个")
+                    ? ("运行中　待解密文 " + pending + " 条　已解文件 " + done + " 个")
                     : ("未运行　待解密文 " + pending + " 条　已解文件 " + done + " 个"));
             summaryView.setTextColor(MultiWsReceiver.isRunning() ? COLOR_OK : COLOR_SUB);
         }
@@ -263,7 +286,7 @@ root.addView(summaryView, lp(0, 8));
             tv.setText("第" + (i + 1) + "路：" + s);
 
             int color = COLOR_SUB;
-if (s.contains("已接收到")) color = COLOR_OK;
+            if (s.contains("已接收到")) color = COLOR_OK;
             else if (s.contains("断开") || s.contains("重连")) color = COLOR_WARN;
             else if (s.contains("已连接")) color = COLOR_ACCENT;
             tv.setTextColor(color);
@@ -291,7 +314,7 @@ if (s.contains("已接收到")) color = COLOR_OK;
         for (int i = 0; i < MultiWsReceiver.SLOTS; i++) {
             if (urlInputs[i] != null) {
                 urlInputs[i].setText(urls[i] == null ? "" : urls[i]);
-}
+            }
         }
         refreshStatus();
     }
@@ -333,5 +356,3 @@ if (s.contains("已接收到")) color = COLOR_OK;
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }
 }
-
-
