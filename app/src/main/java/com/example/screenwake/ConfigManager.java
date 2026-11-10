@@ -23,6 +23,8 @@ public final class ConfigManager {
     private static final String KEY_SLEEP_MINUTES  = "sleep_minutes";
     private static final String KEY_DETECT_MODE    = "detect_mode";
     private static final String KEY_LOCAL_FILE_URI = "local_file_uri";
+    private static final String KEY_PAUSED         = "paused";
+    private static final String KEY_LAST_TRIGGER   = "last_trigger";
 
     private ConfigManager() {}
 
@@ -35,6 +37,7 @@ public final class ConfigManager {
     public static String getServerUrl(Context ctx) {
         return pref(ctx).getString(KEY_SERVER_URL, "");
     }
+
     public static void setServerUrl(Context ctx, String url) {
         pref(ctx).edit().putString(KEY_SERVER_URL, url == null ? "" : url).apply();
     }
@@ -42,9 +45,11 @@ public final class ConfigManager {
     public static String getToken(Context ctx) {
         return pref(ctx).getString(KEY_TOKEN, "");
     }
+
     public static void setToken(Context ctx, String token) {
         pref(ctx).edit().putString(KEY_TOKEN, token == null ? "" : token).apply();
     }
+
     public static String getDeviceToken(Context ctx) { return getToken(ctx); }
     public static void setDeviceToken(Context ctx, String token) { setToken(ctx, token); }
 
@@ -59,6 +64,7 @@ public final class ConfigManager {
         }
         return id;
     }
+
     public static void setDeviceId(Context ctx, String id) {
         pref(ctx).edit().putString(KEY_DEVICE_ID, id == null ? "" : id).apply();
     }
@@ -67,15 +73,18 @@ public final class ConfigManager {
     public static boolean isEnabled(Context ctx) {
         return pref(ctx).getBoolean(KEY_ENABLED, false);
     }
+
     public static void setEnabled(Context ctx, boolean enabled) {
         pref(ctx).edit().putBoolean(KEY_ENABLED, enabled).apply();
     }
+
     public static void enable(Context ctx) { setEnabled(ctx, true); }
     public static void disable(Context ctx) { setEnabled(ctx, false); }
 
     public static long getIntervalMinutes(Context ctx) {
         return pref(ctx).getLong(KEY_INTERVAL_MIN, 60L);
     }
+
     public static void setIntervalMinutes(Context ctx, long minutes) {
         pref(ctx).edit().putLong(KEY_INTERVAL_MIN, minutes).apply();
     }
@@ -83,14 +92,34 @@ public final class ConfigManager {
     public static long getNextTrigger(Context ctx) {
         return pref(ctx).getLong(KEY_NEXT_TRIGGER, 0L);
     }
+
     public static void setNextTrigger(Context ctx, long ts) {
         pref(ctx).edit().putLong(KEY_NEXT_TRIGGER, ts).apply();
+    }
+
+    // ================= 暂停开关（CommandExecutor / BootReceiver / TaskReceiver 使用） =================
+    public static boolean isPaused(Context ctx) {
+        return pref(ctx).getBoolean(KEY_PAUSED, false);
+    }
+
+    public static void setPaused(Context ctx, boolean paused) {
+        pref(ctx).edit().putBoolean(KEY_PAUSED, paused).apply();
+    }
+
+    // ================= 上次触发时间（TaskReceiver 使用） =================
+    public static long getLastTrigger(Context ctx) {
+        return pref(ctx).getLong(KEY_LAST_TRIGGER, 0L);
+    }
+
+    public static void setLastTrigger(Context ctx, long ts) {
+        pref(ctx).edit().putLong(KEY_LAST_TRIGGER, ts).apply();
     }
 
     // ================= 监控网页 =================
     public static String getMonitorUrl(Context ctx) {
         return pref(ctx).getString(KEY_MONITOR_URL, "");
     }
+
     public static void setMonitorUrl(Context ctx, String url) {
         pref(ctx).edit().putString(KEY_MONITOR_URL, url == null ? "" : url).apply();
     }
@@ -99,6 +128,7 @@ public final class ConfigManager {
     public static String getFeishuWebhook(Context ctx) {
         return pref(ctx).getString(KEY_FEISHU_HOOK, "");
     }
+
     public static void setFeishuWebhook(Context ctx, String hook) {
         pref(ctx).edit().putString(KEY_FEISHU_HOOK, hook == null ? "" : hook).apply();
     }
@@ -107,6 +137,7 @@ public final class ConfigManager {
     public static int getSleepMinutes(Context ctx) {
         return pref(ctx).getInt(KEY_SLEEP_MINUTES, 60);
     }
+
     public static void setSleepMinutes(Context ctx, int minutes) {
         if (minutes < 1) minutes = 1;
         if (minutes > 1440) minutes = 1440;
@@ -119,6 +150,7 @@ public final class ConfigManager {
         if (m == null || m.trim().isEmpty()) m = MODE_WEB;
         return m;
     }
+
     public static void setDetectMode(Context ctx, String mode) {
         if (!MODE_FILE.equals(mode)) mode = MODE_WEB;
         pref(ctx).edit().putString(KEY_DETECT_MODE, mode).apply();
@@ -128,10 +160,9 @@ public final class ConfigManager {
     public static String getLocalFileUri(Context ctx) {
         return pref(ctx).getString(KEY_LOCAL_FILE_URI, "");
     }
+
     public static void setLocalFileUri(Context ctx, String uri) {
         pref(ctx).edit().putString(KEY_LOCAL_FILE_URI, uri == null ? "" : uri).apply();
     }
 }
-
-
 
