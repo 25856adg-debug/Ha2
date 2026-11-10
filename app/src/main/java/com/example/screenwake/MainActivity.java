@@ -2,9 +2,8 @@ package com.example.screenwake;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -16,26 +15,22 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements CommandPoller.ServerBindNotifyCallback {
     private int dp(float n) {
         return (int)(n *
                 getResources().getDisplayMetrics().density + 0.5f);
     }
     private TextView timerStatus;
-    private LocalBroadcastManager mLocalBroadcastManager;
-    private BroadcastReceiver mBindReceiver;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(18,23,33));
         getWindow().setNavigationBarColor(Color.BLACK);
-        mLocalBroadcastManager = LocalBroadcastManager.getInstance(this);
         buildLauncher();
         AlarmScheduler.scheduleBaseline(this);
     }
@@ -46,48 +41,47 @@ public class MainActivity extends Activity {
         if (timerStatus != null) {
             updateTimerStatus();
         }
-        // 注册绑定确认广播
-        IntentFilter filter = new IntentFilter("com.example.screenwake.BIND_CONFIRM");
-        mBindReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                String bindId = intent.getStringExtra("server_bind_id");
-                boolean isChanged = intent.getBooleanExtra("is_changed",false);
-
-                String title,msg;
-                if(isChanged){
-                    title = "服务器标识码已变更";
-                    msg = "服务器重启，标识码更新。是否信任该新服务器？\nID:"+bindId;
-                }else{
-                    title = "收到新服务器绑定请求";
-                    msg = "是否信任此服务器？\nID:"+bindId;
-                }
-
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle(title)
-                        .setMessage(msg)
-                        .setPositiveButton("接收", (dialog, which) -> {
-                            LogManager.setTrustedServerBindId(MainActivity.this,bindId);
-                            CommandPoller.start(MainActivity.this);
-                            toast("已信任该服务器");
-                        })
-                        .setNegativeButton("拒绝", (dialog, which) -> {
-                            LogManager.log(MainActivity.this,LogManager.SUB_COMMAND,"用户拒绝服务器bindId="+bindId);
-                            toast("已拒绝该服务器");
-                        })
-                        .setCancelable(false)
-                        .show();
-            }
-        };
-        mLocalBroadcastManager.registerReceiver(mBindReceiver,filter);
+        // 前台时注册回调，接收服务器绑定弹窗事件
+        CommandPoller.setServerBindNotifyCallback(this);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if(mBindReceiver != null){
-            mLocalBroadcastManager.unregisterReceiver(mBindReceiver);
+        // 退后台，取消回调，不再接收弹窗事件
+        CommandPoller.setServerBindNotifyCallback(null);
+    }
+
+    // ========= 实现回调接口，收到需要弹窗事件 =========
+    @Override
+    public void needShowBindDialog(String bindId, boolean isChanged) {
+        String title,msg;
+        if(isChanged){
+            title = "服务器标识码已变更";
+            msg = "服务器重启，标识码更新。是否信任该新服务器？\nID:"+bindId;
+        }else{
+            title = "收到新服务器绑定请求";
+            msg = "是否信任此服务器？\nID:"+bindId;
         }
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle(title)
+                .setMessage(msg)
+                .setPositiveButton("接收", (dialog, which) -> {
+                    boolean ok = LogManager.setTrustedServerBindId(MainActivity.this,bindId);
+                    if(ok){
+                        CommandPoller.start(MainActivity.this);
+                        toast("已信任该服务器");
+                    }else{
+                        toast("保存信任ID失败，请检查存储权限");
+                    }
+                })
+                .setNegativeButton("拒绝", (dialog, which) -> {
+                    LogManager.log(MainActivity.this,LogManager.SUB_COMMAND,"用户拒绝服务器bindId="+bindId);
+                    toast("已拒绝该服务器");
+                })
+                .setCancelable(false)
+                .show();
     }
 
     private void buildLauncher() {
@@ -192,7 +186,7 @@ public class MainActivity extends Activity {
                 this::updateTimerStatus
         );
 
-        // ======================【新增：服务器信任管理按钮】======================
+        // ======================【服务器信任管理按钮】======================
         addSection(root,"服务器信任管理");
         addButton(root,"查看当前信任服务器ID",()->{
             String id = LogManager.getTrustedServerBindId(this);
@@ -368,8 +362,7 @@ public class MainActivity extends Activity {
         EditText server = new EditText(this);
         server.setHint("服务器地址，例如 http://1.2.3.4:3357");
         server.setSingleLine(true);
-        server.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_VARIATION_URI);
+        server.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         server.setText(ConfigManager.getServerUrl(this));
         EditText token = new EditText(this);
         token.setHint("设备Token");
@@ -386,7 +379,6 @@ public class MainActivity extends Activity {
                 .setPositiveButton("保存",(dialog,which) -> {
                     String url = server.getText().toString().trim();
                     String key = token.getText().toString().trim();
-                    // 只要求非空，且必须以 http:// 或 https:// 开头
                     if (url.isEmpty()
                             || key.isEmpty()
                             || !(url.startsWith("http://")
@@ -401,7 +393,6 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    // ================= 原有功能 =================
     private void openTermux() {
         try {
             Intent intent =
@@ -454,6 +445,3 @@ public class MainActivity extends Activity {
         ).show();
     }
 }
-
-
-
