@@ -595,7 +595,68 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             showError(e);
         }
     }
+    // ========= tail‑f 实时查看日志弹窗，最多20行 =========
+    private void showTailLogDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
 
+        // 切换日志按钮行
+        LinearLayout barLayout = new LinearLayout(this);
+        barLayout.setOrientation(LinearLayout.HORIZONTAL);
+        barLayout.setGravity(Gravity.CENTER);
+        barLayout.setPadding(0,0,0,dp(12));
+
+        TextView btnApp = new TextView(this);
+        btnApp.setText("App日志");
+        btnApp.setPadding(dp(8),dp(6),dp(8),dp(6));
+        btnApp.setTextSize(13);
+        btnApp.setOnClickListener(v->{
+            tailCurrentSub = LogManager.SUB_APP;
+        });
+
+        TextView btnUpload = new TextView(this);
+        btnUpload.setText("上报Upload日志");
+        btnUpload.setPadding(dp(8),dp(6),dp(8),dp(6));
+        btnUpload.setTextSize(13);
+        btnUpload.setOnClickListener(v->{
+            tailCurrentSub = LogManager.SUB_UPLOAD;
+        });
+
+        TextView btnCmd = new TextView(this);
+        btnCmd.setText("指令Command日志");
+        btnCmd.setPadding(dp(8),dp(6),dp(8),dp(6));
+        btnCmd.setTextSize(13);
+        btnCmd.setOnClickListener(v->{
+            tailCurrentSub = LogManager.SUB_COMMAND;
+        });
+
+        barLayout.addView(btnApp);
+        barLayout.addView(btnUpload);
+        barLayout.addView(btnCmd);
+        layout.addView(barLayout);
+
+        tailLogText = new TextView(this);
+        tailLogText.setTextSize(11);
+        tailLogText.setMaxHeight(dp(400));
+        tailLogText.setMovementMethod(ScrollingMovementMethod.getInstance());
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(tailLogText);
+        layout.addView(sv);
+
+        builder.setTitle("实时日志 tail‑20行｜点击切换日志分类");
+        builder.setView(layout);
+        builder.setNegativeButton("关闭", (dialog, which) -> {
+            tailHandler.removeCallbacks(tailRunnable);
+            tailLogDialog = null;
+            tailLogText = null;
+        });
+        tailLogDialog = builder.create();
+        tailLogDialog.show();
+        tailHandler.post(tailRunnable);
+    }
     private void toast(String message) {
         Toast.makeText(
                 this,
@@ -612,7 +673,23 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         ).show();
     }
     }
+    // tail日志弹窗自动刷新
+    private final Handler tailHandler = new Handler(Looper.getMainLooper());
+    private AlertDialog tailLogDialog;
+    private TextView tailLogText;
+    private String tailCurrentSub = LogManager.SUB_APP; // 默认查看app日志
 
-
-
+    private final Runnable tailRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (tailLogDialog != null && tailLogText != null) {
+                String txt = LogManager.readTailDebug(MainActivity.this, tailCurrentSub, 20);
+                tailLogText.setText(txt);
+            }
+            if (tailLogDialog != null && tailLogDialog.isShowing()) {
+                tailHandler.postDelayed(this, 1200);
+            }
+        }
+    };
+    
 
