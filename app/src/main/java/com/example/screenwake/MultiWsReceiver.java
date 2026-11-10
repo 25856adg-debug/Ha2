@@ -2,6 +2,7 @@ package com.example.screenwake;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Environment;
 import android.util.Base64;
 import android.util.Log;
 
@@ -37,7 +38,7 @@ import javax.net.ssl.SSLSocketFactory;
  * ================= 协议约定（全程密文，无明文字节） =================
  * 1) 数据消息（用"当前密钥"加密）
  *      {"iv":"xxxx","cipher":"xxxx"}  或  ivBase64:cipherBase64
-*    解密后明文为：
+ *    解密后明文为：
  *      {"t":"data","d":{ ...任意JSON... }}     或  任意文本
  *
  * 2) 换钥指令（也用密文发送，用"引导密钥"加密，密钥不裸奔）
@@ -47,7 +48,9 @@ import javax.net.ssl.SSLSocketFactory;
  *    兼容明文 kk 写法：kkMyKey12345678901 / kk:MyKey12345678901
  *
  * ================= 三个文件 =================
- *   Android/data/<包名>/files/wsdata/
+ *   /sdcard/ScreenWake/wsdata/（优先，公共目录，文件管理器能直接打开）
+ *   其次 Android/data/<包名>/files/wsdata/
+ *
  *     key.txt        密钥文件：第一行=当前密钥，第二行=上一个密钥（最多两个）
  *     pending.txt    待解文件：暂时解不开的密文（时间|通道|密文）
  *     decrypted/     已解文件：每解出一条存一个 txt，如 ch1_20261110_191203.txt
@@ -67,7 +70,7 @@ public final class MultiWsReceiver {
     public static final int SLOTS = 5;
 
     private static final String PREF_NAME = "ScreenWakeWs";
-private static final String KEY_URL = "url_";
+    private static final String KEY_URL = "url_";
     private static final String KEY_AES = "aes_";
     private static final String KEY_MODE = "mode";
 
@@ -82,6 +85,9 @@ private static final String KEY_URL = "url_";
     private static final String SUB = "ws/";
 
     private static final String DIR_NAME = "wsdata";
+
+    /** 公共目录：/sdcard/ScreenWake/wsdata */
+    private static final String PUB_DIR = "ScreenWake/wsdata";
 
     private static final WsClient[] CLIENTS = new WsClient[SLOTS];
 
@@ -99,7 +105,8 @@ private static final String KEY_URL = "url_";
             STATUS[i] = "未启动";
         }
     }
-// ==================== 对外接口 ====================
+
+    // ==================== 对外接口 ====================
 
     /** 保存 5 路地址（空字符串表示该路不启用） */
     public static void setUrls(Context ctx, String[] urls) {
@@ -127,7 +134,7 @@ private static final String KEY_URL = "url_";
     public static void setMode(Context ctx, String mode) {
         String m = MODE_POLL.equals(mode) ? MODE_POLL
                 : (MODE_SINGLE.equals(mode) ? MODE_SINGLE : MODE_MULTI);
-pref(ctx).edit().putString(KEY_MODE, m).apply();
+        pref(ctx).edit().putString(KEY_MODE, m).apply();
     }
 
     public static String getMode(Context ctx) {
@@ -141,22 +148,34 @@ pref(ctx).edit().putString(KEY_MODE, m).apply();
         stop();
         appCtx = ctx.getApplicationContext();
 
-        // 优先外部私有目录（Android/data/包名/files/wsdata），拿不到就退回内部存储
+        // 目录优先级：
+        //   1) 公共目录 /sdcard/ScreenWake/wsdata —— 任何文件管理器都能直接看
+        //   2) Android/data 私有目录（旧位置，文件管理器一般进不去）
+        //   3) 应用内部存储（连外部存储都没有时）
+        File oldDir = null;
         File ext = appCtx.getExternalFilesDir(null);
-        if (ext != null) {
-            baseDir = new File(ext, DIR_NAME);
+        if (ext != null) oldDir = new File(ext, DIR_NAME);
+
+        File pub = new File(Environment.getExternalStorageDirectory(), PUB_DIR);
+        if (ensureWritableDir(pub)) {
+            baseDir = pub;
+            migrateKey(oldDir, baseDir);
+        } else if (ext != null && ensureWritableDir(oldDir)) {
+            baseDir = oldDir;
+            LogManager.log(appCtx, SUB, "公共目录不可写（缺全部文件访问权限？），退回私有目录");
         } else {
             baseDir = new File(appCtx.getFilesDir(), DIR_NAME);
-            LogManager.log(appCtx, SUB, "外部目录不可用，改用内部存储：" + baseDir.getAbsolutePath());
+            if (!ensureWritableDir(baseDir)) {
+                Log.e(TAG, "创建目录失败：" + baseDir.getAbsolutePath());
+            }
+            LogManager.log(appCtx, SUB, "外部目录不可用，改用内部存储");
         }
-        if (!baseDir.exists() && !baseDir.mkdirs()) {
-            Log.e(TAG, "创建目录失败：" + baseDir.getAbsolutePath());
-        }
+        LogManager.log(appCtx, SUB, "数据目录=" + baseDir.getAbsolutePath());
 
         // 启动先补一次：用现有密钥/默认密钥把待解文件重解一遍
         new Thread(() -> {
             try {
-Thread.sleep(500);
+                Thread.sleep(500);
                 retryPending();
             } catch (Exception e) {
                 Log.e(TAG, "启动重解待解文件失败", e);
@@ -176,6 +195,7 @@ Thread.sleep(500);
                 LogManager.log(appCtx, SUB, "轮询模式：第1路地址为空，未启动");
                 return;
             }
+            if (POLL_CLIENT != null) POLL_CLIENT.active = false;
             POLL_CLIENT = new PollClient(0, u);
             Thread pt = new Thread(POLL_CLIENT, "ScreenWake-POLL");
             pt.start();
@@ -188,7 +208,7 @@ Thread.sleep(500);
 
         int startedCount = 0;
         for (int i = 0; i < SLOTS; i++) {
-if (single && i > 0) {
+            if (single && i > 0) {
                 STATUS[i] = "单连接模式（由第1路统一接收）";
                 continue;
             }
@@ -219,7 +239,7 @@ if (single && i > 0) {
 
         String lower = u.toLowerCase(Locale.getDefault());
         if (lower.startsWith("http://")) {
-u = "ws://" + u.substring(7);
+            u = "ws://" + u.substring(7);
         } else if (lower.startsWith("https://")) {
             u = "wss://" + u.substring(8);
         } else if (!lower.startsWith("ws://") && !lower.startsWith("wss://")) {
@@ -251,7 +271,7 @@ u = "ws://" + u.substring(7);
         PollClient pc = POLL_CLIENT;
         if (pc != null) {
             pc.active = false;
-POLL_CLIENT = null;
+            POLL_CLIENT = null;
         }
         for (int i = 0; i < SLOTS; i++) {
             WsClient c = CLIENTS[i];
@@ -288,7 +308,7 @@ POLL_CLIENT = null;
     /** 目录，方便打开查看文件 */
     public static String getDataDir() {
         return baseDir == null ? "" : baseDir.getAbsolutePath();
-}
+    }
 
     /** 密钥文件路径（全文件只保存一个密钥） */
     public static String getKeyPath() {
@@ -329,7 +349,7 @@ POLL_CLIENT = null;
 
     /** 清空待解文件（返回清掉的条数） */
     public static int clearPending() {
-if (baseDir == null) return 0;
+        if (baseDir == null) return 0;
         int n = getPendingCount();
         try {
             File f = pendingFile();
@@ -364,7 +384,8 @@ if (baseDir == null) return 0;
      * 作用：还没收到换钥指令时也能直接解密，避免"收到一堆密文全解不开"。
      */
     public static final String DEFAULT_KEY = "xhdndhxbjdhhwhdh";
-/** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
+
+    /** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
     private static File keyFile() {
         return new File(baseDir, "key.txt");
     }
@@ -400,7 +421,7 @@ if (baseDir == null) return 0;
 
     /** 当前密钥（第一行） */
     private static String readKey() {
-List<String> keys = readKeys();
+        List<String> keys = readKeys();
         return keys.isEmpty() ? "" : keys.get(0);
     }
 
@@ -434,7 +455,7 @@ List<String> keys = readKeys();
         try {
             String line = now() + "|" + (slot + 1) + "|"
                     + payload.replace("\r", " ").replace("\n", " ");
-File f = pendingFile();
+            File f = pendingFile();
             if (!f.exists()) {
                 writeText(f, line + "\n");
             } else {
@@ -466,7 +487,7 @@ File f = pendingFile();
 
     private static String fileStamp() {
         return new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-}
+    }
 
     // ==================== 消息处理 ====================
 
@@ -494,7 +515,7 @@ File f = pendingFile();
                     }
                 } else {
                     int bar = m.indexOf('|');
-if (bar > 0) {
+                    if (bar > 0) {
                         int ch = parseSlot(m.substring(0, bar).trim());
                         if (ch >= 0) {
                             targetSlot = ch;
@@ -523,7 +544,7 @@ if (bar > 0) {
         try {
             int n = Integer.parseInt(t);
             if (n >= 1 && n <= SLOTS) return n - 1;
-} catch (Exception ignored) {}
+        } catch (Exception ignored) {}
         return -1;
     }
 
@@ -557,14 +578,24 @@ if (bar > 0) {
             String k = extractKeyFromPlain(t);
             if (k != null) {
                 writeKey(k);
-int ok = retryPending();
+                int ok = retryPending();
                 setStatus(slot, "已接收到（未加密密钥，新解出 " + ok + " 条）");
                 return;
             }
         }
 
         appendPending(slot, payload);
-        setStatus(slot, "已接收到（密文暂解不开，已存入待解文件）");
+        setStatus(slot, "解不开（已存待解）：" + triedSummary() + " 都试过了");
+                                 }
+    /** 不泄露密钥内容，只报告试了哪几把、各多少位 */
+    private static String triedSummary() {
+        StringBuilder sb = new StringBuilder();
+        List<String> ks = readKeys();
+        sb.append("key.txt").append(ks.size()).append("把");
+        if (!ks.isEmpty()) sb.append("/").append(ks.get(0).length()).append("位");
+        sb.append("、默认").append(DEFAULT_KEY.length()).append("位");
+        sb.append("、引导").append(BOOTSTRAP_KEY.length()).append("位");
+        return sb.toString();
     }
 
     /** 用"密钥文件(当前/备用) → 内置默认密钥 → 引导密钥"依次尝试解密 */
@@ -587,7 +618,7 @@ int ok = retryPending();
         if (t.regionMatches(true, 0, "kk", 0, 2)) {
             String body = t.substring(2).trim();
             while (body.startsWith(":") || body.startsWith("=")) {
-body = body.substring(1).trim();
+                body = body.substring(1).trim();
             }
             if (body.startsWith("{")) {
                 try {
@@ -615,7 +646,7 @@ body = body.substring(1).trim();
     // ==================== 待解文件重解 ====================
 
     /** 用当前密钥把待解文件里能解的都解出来，解出后从待解文件删除 */
-private static int retryPending() {
+    private static int retryPending() {
         File f = pendingFile();
         if (!f.exists()) return 0;
 
@@ -648,7 +679,7 @@ private static int retryPending() {
             }
             saveDecrypted(slot, plain);
             ok++;
-}
+        }
 
         try {
             rewritePending(remain);
@@ -686,7 +717,7 @@ private static int retryPending() {
 
         // 去掉可能的 data: 前缀
         if (p.regionMatches(true, 0, "data:", 0, 5)) {
-p = p.substring(5).trim();
+            p = p.substring(5).trim();
         }
 
         if (p.startsWith("{")) {
@@ -717,7 +748,8 @@ p = p.substring(5).trim();
         try {
             String[] parts = parsePayload(payload);
             if (parts == null) return null;
-byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
+
+            byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
             byte[] data = Base64.decode(parts[1], Base64.NO_WRAP);
 
             SecretKeySpec keySpec = new SecretKeySpec(
@@ -741,8 +773,55 @@ byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
                 .format(new Date());
     }
 
+    /** 目录能不能建、能不能写（写一个探针文件再删），不行就别用 */
+    private static boolean ensureWritableDir(File d) {
+        try {
+            if (d == null) return false;
+            if (!d.exists() && !d.mkdirs()) return false;
+            File probe = new File(d, ".w_test");
+            if (!probe.exists()) {
+                try (FileOutputStream fos = new FileOutputStream(probe)) {
+                    fos.write('1');
+                }
+            }
+            return probe.delete() || probe.exists();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 换目录时把旧 key.txt 带过去，免得密钥丢了要重新换钥 */
+    private static void migrateKey(File oldDir, File newDir) {
+        try {
+            if (oldDir == null || newDir == null) return;
+            File src = new File(oldDir, "key.txt");
+            File dst = new File(newDir, "key.txt");
+            if (src.exists() && !dst.exists()) {
+                String content = readText(src);
+                if (content != null && !content.trim().isEmpty()) {
+                    writeText(dst, content);
+                    LogManager.log(appCtx, SUB, "已把旧 key.txt 迁到新的公共目录");
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** 读整个小文件（UTF-8），不存在返回空串 */
+    private static String readText(File f) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(
+                new FileInputStream(f), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(line);
+            }
+        }
+        return sb.toString();
+    }
+
     private static void writeText(File f, String content) throws Exception {
-try (FileOutputStream fos = new FileOutputStream(f, false)) {
+        try (FileOutputStream fos = new FileOutputStream(f, false)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));
             fos.flush();
         }
@@ -771,7 +850,8 @@ try (FileOutputStream fos = new FileOutputStream(f, false)) {
     }
 
     // ==================== 状态 ====================
-private static void setStatus(int slot, String s) {
+
+    private static void setStatus(int slot, String s) {
         if (slot >= 0 && slot < SLOTS) {
             STATUS[slot] = s;
         }
@@ -801,11 +881,29 @@ private static void setStatus(int slot, String s) {
         PollClient(int slot, String wsUrl) {
             this.slot = slot;
             this.baseUrl = toHttpBase(wsUrl);
+            this.since = readLastId();
+        }
+
+        /** last id 落盘，App 重启后接着上次的 id 拉，不会把老消息重解一遍 */
+        private long readLastId() {
+            try {
+                File f = new File(baseDir, "last_id.txt");
+                if (!f.exists()) return 0L;
+                return Long.parseLong(readText(f).trim());
+            } catch (Exception e) {
+                return 0L;
+            }
+        }
+
+        private void saveLastId(long id) {
+            try {
+                writeText(new File(baseDir, "last_id.txt"), String.valueOf(id));
+            } catch (Exception ignored) {}
         }
 
         /** ws://h:p/ws → http://h:p/api/pull （长轮询，wait=15 秒） */
         private static String toHttpBase(String u) {
-String s = u;
+            String s = u;
             String lower = s.toLowerCase(Locale.getDefault());
             if (lower.startsWith("ws://")) {
                 s = "http://" + s.substring(5);
@@ -831,7 +929,7 @@ String s = u;
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException ie) {
-Thread.currentThread().interrupt();
+                        Thread.currentThread().interrupt();
                         break;
                     }
                 }
@@ -855,13 +953,30 @@ Thread.currentThread().interrupt();
             String line;
             int got = 0;
             while ((line = br.readLine()) != null) {
-if (line.startsWith("key:")) {
+                if (line.startsWith("key:")) {
                     keyLine = line.substring(4).trim();
                 } else if (line.startsWith("last:")) {
                     lastLine = line.substring(5).trim();
                 } else if (!line.trim().isEmpty()) {
-                    dispatch(slot, line.trim());
+                    String t = line.trim();
+                    String body = t;
+                    long id = -1L;
+                    if (t.startsWith("d")) {
+                        int c = t.indexOf(':');
+                        if (c > 1) {
+                            try {
+                                id = Long.parseLong(t.substring(1, c));
+                                body = t.substring(c + 1);
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                    if (id >= 0 && id <= since) continue;   // 去重：老消息不再解一遍
+                    dispatch(slot, body);
                     got++;
+                    if (id > since) {
+                        since = id;
+                        saveLastId(since);
+                    }
                 }
             }
             br.close();
@@ -869,7 +984,11 @@ if (line.startsWith("key:")) {
 
             if (lastLine != null) {
                 try {
-                    since = Long.parseLong(lastLine);
+                    long last = Long.parseLong(lastLine);
+                    if (last > since) {
+                        since = last;
+                        saveLastId(since);
+                    }
                 } catch (NumberFormatException ignored) {}
             }
             if (keyLine != null && !keyLine.isEmpty()) {
@@ -886,7 +1005,7 @@ if (line.startsWith("key:")) {
         private static final String KEY_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
         final int slot;
-final String url;
+        final String url;
         volatile boolean active = true;
 
         private volatile Socket socket;
@@ -918,7 +1037,7 @@ final String url;
                 setStatus(slot, "等待重连（" + (backoff / 1000) + "秒后）");
                 try {
                     Thread.sleep(backoff);
-} catch (InterruptedException ie) {
+                } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
                 }
@@ -926,7 +1045,8 @@ final String url;
             }
             setStatus(slot, "已停止");
         }
-private void connectAndRead() throws Exception {
+
+        private void connectAndRead() throws Exception {
             // 1. 解析地址
             String lower = url.toLowerCase(Locale.getDefault());
             String scheme;
