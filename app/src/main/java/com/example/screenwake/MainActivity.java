@@ -32,7 +32,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
     private int dp(float n) {
         return (int) (n * getResources().getDisplayMetrics().density + 0.5f);
-    }
+}
 
     private TextView timerStatus;
     private TextView webStatus;
@@ -58,7 +58,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 tailHandler.postDelayed(this, 1200);
             }
         }
-    };
+};
 
     // ========= 状态刷新（每5秒） =========
     private final Handler statusHandler = new Handler(Looper.getMainLooper());
@@ -85,7 +85,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 ? !ConfigManager.getLocalFileUri(this).isEmpty()
                 : !ConfigManager.getMonitorUrl(this).isEmpty();
         if (!hook.isEmpty() && okSource) {
-            WebMonitor.start(this, ConfigManager.getMonitorUrl(this), hook);
+WebMonitor.start(this, ConfigManager.getMonitorUrl(this), hook);
         }
     }
 
@@ -119,7 +119,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
         if (requestCode == REQUEST_MANAGE_STORAGE) {
             toast(hasAllFilePermission() ? "全部文件权限已获取" : "未授予全部文件访问权限");
-            return;
+return;
         }
 
         // ===== SAF 选本地文本文件 =====
@@ -144,7 +144,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 updateWebStatus();
                 confirmDialog("已选择本地文件",
                         "路径：" + uri.toString()
-                                + "\n\n检测方式已切换为【本地文件】\n规则：0=休眠，1=发一次，2~500=按秒循环发送，读不到=不动作");
++ "\n\n检测方式已切换为【本地文件】\n规则：0=休眠，1=发一次，2~500=按秒循环发送，读不到=不动作");
             } else {
                 toast("未选择文件");
             }
@@ -170,7 +170,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     // ================= 权限 =================
     private boolean hasAllFilePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return android.os.Environment.isExternalStorageManager();
+return android.os.Environment.isExternalStorageManager();
         }
         return true;
     }
@@ -197,7 +197,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
     private void requestCameraPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_PERM_CAMERA);
+requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_PERM_CAMERA);
         }
     }
 
@@ -223,7 +223,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     }
 
     // ================= 私有目录测试 =================
-    private void testPrivateWrite() {
+private void testPrivateWrite() {
         File baseDir = getExternalFilesDir(null);
         StringBuilder sb = new StringBuilder();
         sb.append("=== 目录检测 ===\n");
@@ -244,7 +244,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             } catch (Exception e) {
                 sb.append("❌ 写入异常：").append(e.getClass().getSimpleName())
                         .append(" | ").append(e.getMessage()).append("\n");
-            }
+}
         }
         confirmDialog("私有目录读写测试", sb.toString());
     }
@@ -271,7 +271,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 })
                 .setNegativeButton("拒绝", (dialog, which) -> {
                     LogManager.log(MainActivity.this, LogManager.SUB_COMMAND,
-                            "用户拒绝服务器bindId=" + bindId);
+"用户拒绝服务器bindId=" + bindId);
                     toast("已拒绝该服务器");
                 })
                 .setCancelable(false)
@@ -297,7 +297,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         btnApp.setOnClickListener(v -> tailCurrentSub = LogManager.SUB_APP);
 
         TextView btnUpload = new TextView(this);
-        btnUpload.setText("上报Upload日志");
+btnUpload.setText("上报Upload日志");
         btnUpload.setPadding(dp(8), dp(6), dp(8), dp(6));
         btnUpload.setTextSize(13);
         btnUpload.setOnClickListener(v -> tailCurrentSub = LogManager.SUB_UPLOAD);
@@ -324,7 +324,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
         builder.setTitle("实时日志 tail-20行｜点击切换日志分类");
         builder.setView(layout);
-        builder.setNegativeButton("关闭", (dialog, which) -> {
+builder.setNegativeButton("关闭", (dialog, which) -> {
             tailHandler.removeCallbacks(tailRunnable);
             tailLogDialog = null;
             tailLogText = null;
@@ -353,7 +353,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         TextView subtitle = new TextView(this);
         subtitle.setText("所有操作由你手动点击");
         subtitle.setTextColor(Color.LTGRAY);
-        subtitle.setTextSize(13);
+subtitle.setTextSize(13);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setPadding(0, 0, 0, dp(24));
         root.addView(subtitle);
@@ -376,7 +376,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
         addButton(root, "选择检测方式（网页 / 本地文件）", this::showDetectModeDialog);
         addButton(root, "选择本地文本文件（SAF）", this::pickLocalFile);
-        addButton(root, "配置网页地址与飞书Webhook", this::showMonitorConfigDialog);
+addButton(root, "配置网页地址与飞书Webhook", this::showMonitorConfigDialog);
         addButton(root, "设置休眠时长（1分钟~1天）", this::showSleepDialog);
         addButton(root, "启动检测（10秒一次）", () -> {
             String hook = ConfigManager.getFeishuWebhook(this);
@@ -401,7 +401,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             toast("已启动，每10秒检测一次");
         });
         addButton(root, "停止检测", () -> {
-            WebMonitor.stop();
+WebMonitor.stop();
             updateWebStatus();
             toast("已停止检测与发送");
         });
@@ -416,7 +416,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 toast("请先配置飞书Webhook");
                 return;
             }
-            DeviceUploader.send(this, hook, "MyKey1234567890", DeviceInfo.collect(this),
+            DeviceUploader.send(this, hook, DeviceUploader.DEFAULT_AES_KEY, DeviceInfo.collect(this),
                     (ok, msg) -> toast((ok ? "上报成功：" : "上报失败：") + msg));
         });
         addButton(root, "实时查看日志(tail-20行)", this::showTailLogDialog);
@@ -427,7 +427,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         addSection(root, "设备定时任务");
         timerStatus = new TextView(this);
         timerStatus.setTextColor(Color.rgb(130, 220, 170));
-        timerStatus.setTextSize(14);
+timerStatus.setTextSize(14);
         timerStatus.setGravity(Gravity.CENTER);
         timerStatus.setPadding(dp(8), dp(12), dp(8), dp(12));
         root.addView(timerStatus);
@@ -456,7 +456,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         });
 
         // ================= 服务器信任 =================
-        addSection(root, "服务器信任管理");
+addSection(root, "服务器信任管理");
         addButton(root, "查看当前信任服务器ID", () -> {
             String id = LogManager.getTrustedServerBindId(this);
             if (id == null || id.isEmpty()) {
@@ -478,7 +478,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         addSection(root, "系统设置与权限申请");
         addButton(root, "申请全部文件访问权限", this::requestAllFilePermission);
         addButton(root, "申请普通存储权限", this::requestNormalStoragePermission);
-        addButton(root, "申请相机权限", this::requestCameraPermission);
+addButton(root, "申请相机权限", this::requestCameraPermission);
         addButton(root, "Wi-Fi 设置", () -> openSystemSettings(Settings.ACTION_WIFI_SETTINGS));
         addButton(root, "网络设置", () -> openSystemSettings(Settings.ACTION_WIRELESS_SETTINGS));
         addButton(root, "流量使用情况", () -> openSystemSettings(Settings.ACTION_DATA_USAGE_SETTINGS));
@@ -499,7 +499,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         String mode = ConfigManager.getDetectMode(this);
         String src = ConfigManager.MODE_FILE.equals(mode)
                 ? ("本地文件：" + shortUri(ConfigManager.getLocalFileUri(this)))
-                : ("网页：" + ConfigManager.getMonitorUrl(this));
+: ("网页：" + ConfigManager.getMonitorUrl(this));
 
         String state;
         if (!WebMonitor.isStarted()) {
@@ -528,7 +528,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         if (uri == null || uri.isEmpty()) return "未选择";
         if (uri.length() <= 42) return uri;
         return uri.substring(0, 18) + "..." + uri.substring(uri.length() - 18);
-    }
+}
 
     private void updateTimerStatus() {
         if (timerStatus == null) return;
@@ -553,7 +553,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         };
 
         new AlertDialog.Builder(this)
-                .setTitle("选择检测方式")
+.setTitle("选择检测方式")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
                         ConfigManager.setDetectMode(this, ConfigManager.MODE_WEB);
@@ -575,7 +575,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private void showMonitorConfigDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(20), dp(8), dp(20), dp(8));
+layout.setPadding(dp(20), dp(8), dp(20), dp(8));
 
         EditText urlInput = new EditText(this);
         urlInput.setHint("监控网页地址，如 https://xxx.com/status.txt");
@@ -598,7 +598,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 .setView(layout)
                 .setNegativeButton("取消", null)
                 .setPositiveButton("保存", (dialog, which) -> {
-                    String url = urlInput.getText().toString().trim();
+String url = urlInput.getText().toString().trim();
                     String hook = hookInput.getText().toString().trim();
                     if (hook.isEmpty()) {
                         toast("飞书Webhook必须填写");
@@ -619,7 +619,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     WebMonitor.start(this, url, hook);
                     updateWebStatus();
                     toast("已保存并启动检测");
-                })
+})
                 .show();
     }
 
@@ -649,7 +649,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         new AlertDialog.Builder(this)
                 .setTitle("设置休眠时长")
                 .setMessage("范围：1 ~ 1440 分钟（1天）\n检测读到 0 时按此时长休眠，期间不检测不发送")
-                .setView(layout)
+.setView(layout)
                 .setNegativeButton("取消", null)
                 .setPositiveButton("保存", (dialog, which) -> {
                     try {
@@ -675,7 +675,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         layout.setPadding(dp(20), dp(12), dp(20), dp(8));
 
         EditText hours = new EditText(this);
-        hours.setHint("小时");
+hours.setHint("小时");
         hours.setInputType(InputType.TYPE_CLASS_NUMBER);
         hours.setSingleLine(true);
         hours.setText(String.valueOf(ConfigManager.getIntervalMinutes(this) / 60));
@@ -699,7 +699,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     try {
                         int h = Integer.parseInt(hours.getText().toString().trim());
                         int m = Integer.parseInt(minutes.getText().toString().trim());
-                        if (h < 0 || h > 720 || m < 0 || m > 59) {
+if (h < 0 || h > 720 || m < 0 || m > 59) {
                             toast("时间格式不正确");
                             return;
                         }
@@ -718,11 +718,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 })
                 .show();
     }
-// ================= 服务器配置（旧版保留） =================
+
+    // ================= 服务器配置（旧版保留） =================
     private void showServerDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(20), dp(8), dp(20), dp(8));
+layout.setPadding(dp(20), dp(8), dp(20), dp(8));
 
         EditText server = new EditText(this);
         server.setHint("服务器地址，例如 http://1.2.3.4:3357");
@@ -746,7 +747,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 .setNegativeButton("取消", null)
                 .setPositiveButton("保存", (dialog, which) -> {
                     String url = server.getText().toString().trim();
-                    String key = token.getText().toString().trim();
+String key = token.getText().toString().trim();
                     if (url.isEmpty()
                             || key.isEmpty()
                             || (!url.startsWith("http://") && !url.startsWith("https://"))) {
@@ -858,4 +859,5 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         Toast.makeText(this, "操作失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
     }
 }
-     
+
+                                               
