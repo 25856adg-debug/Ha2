@@ -15,6 +15,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -130,6 +132,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         timerStatus.setPadding(dp(8),dp(12),dp(8),dp(12));
         root.addView(timerStatus);
         updateTimerStatus();
+
         addButton(root,"配置服务器地址和Token",
                 this::showServerDialog
         );
@@ -143,24 +146,16 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     toast("定时器已启用");
                 }
         );
-        addButton(root,"暂停定时器",
+        addButton(root,"关闭定时器",
                 () -> {
-                    AlarmScheduler.pause(this);
+                    AlarmScheduler.cancel(this);
                     updateTimerStatus();
-                    toast("定时器已暂停");
-                }
-        );
-        addButton(root,"恢复定时器",
-                () -> {
-                    AlarmScheduler.resume(this);
-                    updateTimerStatus();
-                    toast("已请求恢复定时器");
+                    toast("定时器已关闭");
                 }
         );
         addButton(root,"立即触发一轮任务",
                 () -> {
-                    if (!ConfigManager.isEnabled(this)
-                            || ConfigManager.isPaused(this)) {
+                    if (!ConfigManager.isEnabled(this)) {
                         toast("请先启用定时器");
                         return;
                     }
@@ -169,22 +164,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     toast("已发送立即触发请求");
                 }
         );
-        addButton(root,"取消定时器",
-                () -> new AlertDialog.Builder(this)
-                        .setTitle("取消定时器")
-                        .setMessage("确定取消定时任务吗？")
-                        .setNegativeButton("返回",null)
-                        .setPositiveButton("确定",
-                                (dialog, which) -> {
-                                    AlarmScheduler.cancel(this);
-                                    updateTimerStatus();
-                                    toast("定时器已取消");
-                                })
-                        .show()
-        );
-        addButton(root,"刷新定时器状态",
-                this::updateTimerStatus
-        );
+        // 原来【刷新定时器状态】改成【查看日志】
+        addButton(root,"查看日志", this::openLogFolder);
 
         // ======================【服务器信任管理按钮】======================
         addSection(root,"服务器信任管理");
@@ -242,6 +223,28 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         setContentView(scroll);
     }
 
+    // 打开日志目录
+    private void openLogFolder() {
+        File baseDir = getExternalFilesDir(null);
+        File logDir = new File(baseDir, "ScreenWakeLogs");
+        if (!logDir.exists()) {
+            toast("日志目录还未生成，请先触发一次上报");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        Uri uri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3AAndroid%2Fdata%2Fcom.example.screenwake%2Ffiles%2FScreenWakeLogs");
+        intent.setDataAndType(uri, "resource/folder");
+        if (intent.resolveActivityInfo(getPackageManager(), 0) != null) {
+            startActivity(intent);
+        } else {
+            // 兜底方案
+            Intent fileIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            fileIntent.setDataAndType(Uri.fromFile(logDir), "*/*");
+            fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            startActivity(Intent.createChooser(fileIntent, "打开日志文件夹"));
+        }
+    }
+
     private void addSection(LinearLayout root, String label) {
         TextView text = new TextView(this);
         text.setText(label);
@@ -274,14 +277,11 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private void updateTimerStatus() {
         if (timerStatus == null) return;
         boolean enabled = ConfigManager.isEnabled(this);
-        boolean paused = ConfigManager.isPaused(this);
         long interval = ConfigManager.getIntervalMinutes(this);
         long next = ConfigManager.getNextTrigger(this);
         String state;
         if (!enabled) {
             state = "未启用";
-        } else if (paused) {
-            state = "已暂停";
         } else {
             state = "运行中";
         }
@@ -313,7 +313,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         EditText minutes = new EditText(this);
         minutes.setHint("分钟");
         minutes.setInputType(InputType.TYPE_CLASS_NUMBER);
-        minutes.setSingleLine(true);
         minutes.setText(String.valueOf(
                 ConfigManager.getIntervalMinutes(this) % 60));
         LinearLayout.LayoutParams lp =
@@ -341,8 +340,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                             return;
                         }
                         ConfigManager.setIntervalMinutes(this,total);
-                        if (ConfigManager.isEnabled(this)
-                                && !ConfigManager.isPaused(this)) {
+                        if (ConfigManager.isEnabled(this)) {
                             AlarmScheduler.scheduleNext(this);
                         }
                         updateTimerStatus();
