@@ -26,7 +26,7 @@ public final class WebMonitor {
     private static final String TAG = "WebMonitor";
 
     // 写死AES密钥16位，必须和 jm.py 一致
-    private static final String FIX_AES_KEY = "MyKey1234567890";
+    private static final String FIX_AES_KEY = "MyKey12345678901";
 
     private static final long CHECK_INTERVAL_MS = 10_000L;
     private static final int  MAX_SEND_INTERVAL_SEC = 500;
@@ -619,14 +619,18 @@ if (s == null || s.isEmpty() || s.length() > 6) return false;
 
         String m = msg == null ? "" : msg;
 
+        // 配置类问题（不是飞书地址的事）
+        if (m.contains("密钥")) {
+            return "配置错误：AES密钥长度不对（必须16字符）";
+        }
         // 飞书地址/配置问题
-        if (m.contains("未配置") || m.contains("地址错误") || m.contains("密钥")) {
+        if (m.contains("未配置") || m.contains("地址错误")) {
             return "飞书地址错误：" + m;
         }
         // HTTP 400/403/404 基本都是 webhook 填错或被禁用
         if (m.contains("HTTP 400") || m.contains("HTTP 401")
-                || m.contains("HTTP 403") || m.contains("HTTP 404")) {
-return "飞书地址错误（" + briefHttp(m) + "）";
+|| m.contains("HTTP 403") || m.contains("HTTP 404")) {
+            return "飞书地址错误（" + briefHttp(m) + "）";
         }
         // 飞书业务错误码：19001/19021 = webhook 不合法
         if (m.contains("\"code\":19001") || m.contains("\"code\":19021")
@@ -650,9 +654,9 @@ return "飞书地址错误（" + briefHttp(m) + "）";
     }
 
     private static String briefHttp(String m) {
-        int i = m.indexOf("HTTP ");
+int i = m.indexOf("HTTP ");
         if (i < 0) return "HTTP ?";
-int end = Math.min(m.length(), i + 9);
+        int end = Math.min(m.length(), i + 9);
         return m.substring(i, end).trim();
     }
 
@@ -692,4 +696,4 @@ int end = Math.min(m.length(), i + 9);
         if (!sleeping) return 0;
         return Math.max(0, sleepEndTs - System.currentTimeMillis());
     }
-    }
+}
