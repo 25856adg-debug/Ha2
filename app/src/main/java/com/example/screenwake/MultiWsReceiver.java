@@ -282,7 +282,7 @@ public final class MultiWsReceiver {
     }
 
     // ==================== 文件结构（三种文件） ====================
-
+    public static final String BOOTSTRAP_KEY = "SwBootstrapKey01";
     /** 1) 密钥文件：全盘只有一个 key.txt，换钥直接覆盖，旧密钥即被删除 */
     private static File keyFile() {
         return new File(baseDir, "key.txt");
