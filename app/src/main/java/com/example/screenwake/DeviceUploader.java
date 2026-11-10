@@ -33,11 +33,11 @@ public final class DeviceUploader {
     public static void send(Context context, Callback callback) {
         final Context app = context.getApplicationContext();
 
-        LogManager.log(app, "DeviceUploader.send() 被触发，准备执行上报");
+        LogManager.log(app, LogManager.SUB_UPLOAD, "DeviceUploader.send() 被触发，准备执行上报");
 
         if (!RUNNING.compareAndSet(false, true)) {
             notifyCallback(callback, false, "已有上传任务正在执行，直接跳过本次");
-            LogManager.log(app, "上报被跳过：RUNNING锁占用");
+            LogManager.log(app, LogManager.SUB_UPLOAD, "上报被跳过：RUNNING锁占用");
             return;
         }
 
@@ -71,7 +71,7 @@ public final class DeviceUploader {
 
                 // 新增日志：打印本次实际要上传的JSON（排查重点！看日志就能知道采集出来有没有cpu/蓝牙/电量）
                 String debugPayload = payload.toString();
-                LogManager.log(app, "本次上报payload内容：" + debugPayload);
+                LogManager.log(app, LogManager.SUB_UPLOAD, "本次上报payload内容：" + debugPayload);
 
                 // ========== AES 加密开始 ==========
                 String jsonStr = debugPayload;
@@ -84,7 +84,7 @@ public final class DeviceUploader {
                 for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                     HttpURLConnection connection = null;
                     try {
-                        LogManager.log(app, "设备信息上传，第 " + attempt + "/" + MAX_ATTEMPTS + " 次尝试");
+                        LogManager.log(app, LogManager.SUB_UPLOAD, "设备信息上传，第 " + attempt + "/" + MAX_ATTEMPTS + " 次尝试");
 
                         connection = (HttpURLConnection) url.openConnection();
                         connection.setRequestMethod("POST");
@@ -99,7 +99,7 @@ public final class DeviceUploader {
                         connection.setRequestProperty("X-Device-Token", token);
                         connection.setRequestProperty("X-Device-Id", deviceId);
                         connection.setRequestProperty("X-Aes-Iv", ivBase64);
-                        connection.setRequestProperty("User-Agent", "ScreenWake/1.0");
+                        connection.setRequestProperty("User‑Agent", "ScreenWake/1.0");
 
                         connection.setFixedLengthStreamingMode(body.length);
 
@@ -112,7 +112,7 @@ public final class DeviceUploader {
                         if (code >= 200 && code < 300) {
                             success = true;
                             finalMessage = "上传成功，HTTP " + code;
-                            LogManager.log(app, "设备信息上传成功，HTTP " + code + "，第 " + attempt + " 次成功");
+                            LogManager.log(app, LogManager.SUB_UPLOAD, "设备信息上传成功，HTTP " + code + "，第 " + attempt + " 次成功");
 
                             // 上传成功后开启指令轮询窗口
                             CommandPoller.startWindow(app);
@@ -123,11 +123,11 @@ public final class DeviceUploader {
                             if (!response.isEmpty()) {
                                 finalMessage += "：" + response;
                             }
-                            LogManager.log(app, "上传失败，第 " + attempt + " 次，" + finalMessage);
+                            LogManager.log(app, LogManager.SUB_UPLOAD, "上传失败，第 " + attempt + " 次，" + finalMessage);
                         }
                     } catch (Exception e) {
                         finalMessage = "第 " + attempt + " 次发送异常：" + e.getClass().getSimpleName() + "：" + e.getMessage();
-                        LogManager.log(app, finalMessage);
+                        LogManager.log(app, LogManager.SUB_UPLOAD, finalMessage);
                         Log.e(TAG, finalMessage, e);
                     } finally {
                         if (connection != null) {
@@ -148,18 +148,18 @@ public final class DeviceUploader {
 
                 if (!success) {
                     finalMessage = "本轮五次上传全部失败，停止本轮发送。最后原因：" + finalMessage;
-                    LogManager.log(app, finalMessage);
+                    LogManager.log(app, LogManager.SUB_UPLOAD, finalMessage);
                 }
 
             } catch (Exception e) {
                 finalMessage = "上传配置或初始化失败：" + e.getMessage();
-                LogManager.log(app, finalMessage);
+                LogManager.log(app, LogManager.SUB_UPLOAD, finalMessage);
                 Log.e(TAG, finalMessage, e);
             } finally {
                 RUNNING.set(false);
                 notifyCallback(callback, success, finalMessage);
             }
-        }, "ScreenWake-Uploader").start();
+        }, "ScreenWake‑Uploader").start();
     }
 
     // ================= 读取服务器响应 =================
@@ -190,4 +190,5 @@ public final class DeviceUploader {
         return RUNNING.get();
     }
 }
+
 
