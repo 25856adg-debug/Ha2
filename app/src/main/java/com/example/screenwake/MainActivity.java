@@ -565,12 +565,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         EditText server = new EditText(this);
         server.setHint("服务器地址，例如 http://1.2.3.4:3357");
         server.setSingleLine(true);
-        server.setInputType(InputType.TEXT_VARIATION_URI);
+        server.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         server.setText(ConfigManager.getServerUrl(this));
         EditText token = new EditText(this);
         token.setHint("设备Token");
         token.setSingleLine(true);
-        token.setInputType(InputType.TEXT_VARIATION_PASSWORD);
+        token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         token.setText(ConfigManager.getToken(this));
         layout.addView(server);
         layout.addView(token);
