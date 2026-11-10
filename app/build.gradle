@@ -13,4 +13,14 @@ android {
         versionCode 3
         versionName '3.2.2'
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // 新增：ActivityResultContracts 动态权限需要
+    implementation "androidx.activity:activity‑ktx:1.8.2"
 }
