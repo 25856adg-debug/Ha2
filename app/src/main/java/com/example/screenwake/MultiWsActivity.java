@@ -30,7 +30,7 @@ public class MultiWsActivity extends Activity {
     private static final int COLOR_TEXT = Color.rgb(220, 227, 234);
     private static final int COLOR_SUB = Color.rgb(150, 165, 180);
     private static final int COLOR_ACCENT = Color.rgb(100, 180, 255);
-    private static final int COLOR_OK = Color.rgb(120, 210, 140);
+private static final int COLOR_OK = Color.rgb(120, 210, 140);
     private static final int COLOR_WARN = Color.rgb(240, 190, 90);
 
     private final EditText[] urlInputs = new EditText[MultiWsReceiver.SLOTS];
@@ -59,7 +59,7 @@ public class MultiWsActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(22), dp(18), dp(30));
-        root.setBackgroundColor(COLOR_BG);
+root.setBackgroundColor(COLOR_BG);
         sv.addView(root);
         setContentView(sv);
 
@@ -97,7 +97,7 @@ public class MultiWsActivity extends Activity {
         TextView tip = new TextView(this);
         tip.setText("五路独立连接，全程只收密文；解出来的明文按通道分别存文件。\n地址填 http:// 也能连，会自动转 ws 并补上 /ws。");
         tip.setTextColor(COLOR_SUB);
-        tip.setTextSize(13);
+tip.setTextSize(13);
         tip.setGravity(Gravity.CENTER);
         root.addView(tip, lp(0, 16));
     }
@@ -111,6 +111,11 @@ public class MultiWsActivity extends Activity {
         modeView.setGravity(Gravity.CENTER);
         root.addView(modeView, lp(0, 8));
 
+        addButton(root, "轮询（推荐，最稳：每2秒拉一次）", () -> {
+            MultiWsReceiver.setMode(this, MultiWsReceiver.MODE_POLL);
+            refreshStatus();
+            toast("已切换到轮询模式（只用第1路地址）");
+        });
         addButton(root, "多连接（五个地址各一条）", () -> {
             MultiWsReceiver.setMode(this, MultiWsReceiver.MODE_MULTI);
             refreshStatus();
@@ -121,7 +126,7 @@ public class MultiWsActivity extends Activity {
             refreshStatus();
             toast("已切换到单连接模式（只连第1个地址）");
         });
-    }
+}
 
     private void buildUrls(LinearLayout root) {
         addSection(root, "五路地址");
@@ -149,7 +154,7 @@ public class MultiWsActivity extends Activity {
 
     private void buildActions(LinearLayout root) {
         addButton(root, "保存地址", () -> {
-            String[] urls = collectUrls();
+String[] urls = collectUrls();
             MultiWsReceiver.setUrls(this, urls);
             toast("地址已保存");
         });
@@ -179,7 +184,7 @@ public class MultiWsActivity extends Activity {
         summaryView.setTextColor(COLOR_TEXT);
         summaryView.setTextSize(14);
         summaryView.setGravity(Gravity.CENTER);
-        root.addView(summaryView, lp(0, 8));
+root.addView(summaryView, lp(0, 8));
 
         for (int i = 0; i < MultiWsReceiver.SLOTS; i++) {
             TextView tv = new TextView(this);
@@ -208,7 +213,7 @@ public class MultiWsActivity extends Activity {
             if (p.isEmpty()) {
                 toast("请先启动一次，目录才会生成");
                 return;
-            }
+}
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) {
                 cm.setPrimaryClip(ClipData.newPlainText("wsdata", p));
@@ -234,15 +239,20 @@ public class MultiWsActivity extends Activity {
 
         if (summaryView != null) {
             summaryView.setText(MultiWsReceiver.isRunning()
-                    ? ("运行中　待解密文 " + pending + " 条　已解文件 " + done + " 个")
+? ("运行中　待解密文 " + pending + " 条　已解文件 " + done + " 个")
                     : ("未运行　待解密文 " + pending + " 条　已解文件 " + done + " 个"));
             summaryView.setTextColor(MultiWsReceiver.isRunning() ? COLOR_OK : COLOR_SUB);
         }
 
         if (modeView != null) {
-            boolean single = MultiWsReceiver.MODE_SINGLE.equals(
-                    MultiWsReceiver.getMode(this));
-            modeView.setText(single ? "当前模式：单连接（只连第1路）" : "当前模式：多连接（五路各一条）");
+            String mode = MultiWsReceiver.getMode(this);
+            if (MultiWsReceiver.MODE_POLL.equals(mode)) {
+                modeView.setText("当前模式：轮询（最稳，只用第1路地址）");
+            } else if (MultiWsReceiver.MODE_SINGLE.equals(mode)) {
+                modeView.setText("当前模式：单连接（只连第1路）");
+            } else {
+                modeView.setText("当前模式：多连接（五路各一条）");
+            }
         }
 
         for (int i = 0; i < MultiWsReceiver.SLOTS; i++) {
@@ -253,7 +263,7 @@ public class MultiWsActivity extends Activity {
             tv.setText("第" + (i + 1) + "路：" + s);
 
             int color = COLOR_SUB;
-            if (s.contains("已接收到")) color = COLOR_OK;
+if (s.contains("已接收到")) color = COLOR_OK;
             else if (s.contains("断开") || s.contains("重连")) color = COLOR_WARN;
             else if (s.contains("已连接")) color = COLOR_ACCENT;
             tv.setTextColor(color);
@@ -281,7 +291,7 @@ public class MultiWsActivity extends Activity {
         for (int i = 0; i < MultiWsReceiver.SLOTS; i++) {
             if (urlInputs[i] != null) {
                 urlInputs[i].setText(urls[i] == null ? "" : urls[i]);
-            }
+}
         }
         refreshStatus();
     }
