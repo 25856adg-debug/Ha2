@@ -14,13 +14,12 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
 import android.text.method.ScrollingMovementMethod;
+import android.view.Gravity;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -93,7 +92,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (grantResults == null || grantResults.length == 0) return;
         switch (requestCode) {
