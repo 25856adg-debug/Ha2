@@ -1,9 +1,11 @@
 package com.example.screenwake;
-import android.graphics.Color;
+
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,15 +14,13 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
 import android.text.method.ScrollingMovementMethod;
-import android.view.Gravity;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -28,12 +28,16 @@ import java.util.Date;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements CommandPoller.ServerBindNotifyCallback {
+
     private int dp(float n) {
-        return (int)(n *
-                getResources().getDisplayMetrics().density + 0.5f);
+        return (int) (n * getResources().getDisplayMetrics().density + 0.5f);
     }
+
     private TextView timerStatus;
+
     private static final int REQUEST_MANAGE_STORAGE = 10086;
+    private static final int REQ_PERM_STORAGE = 1001;
+    private static final int REQ_PERM_CAMERA = 1002;
 
     // tail日志弹窗自动刷新
     private final Handler tailHandler = new Handler(Looper.getMainLooper());
@@ -42,30 +46,20 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private final Runnable tailRunnable = new Runnable() {
         @Override
         public void run() {
-            if(tailLogDialog != null && tailLogText != null){
-                String txt = LogManager.readTail(MainActivity.this, LogManager.SUB_APP,20);
+            if (tailLogDialog != null && tailLogText != null) {
+                String txt = LogManager.readTail(MainActivity.this, LogManager.SUB_APP, 20);
                 tailLogText.setText(txt);
             }
-            if(tailLogDialog != null && tailLogDialog.isShowing()){
-                tailHandler.postDelayed(this,1200);
+            if (tailLogDialog != null && tailLogDialog.isShowing()) {
+                tailHandler.postDelayed(this, 1200);
             }
         }
     };
 
-    // 动态权限申请
-    private final ActivityResultLauncher<String> requestPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    toast("权限已授予");
-                } else {
-                    toast("权限被拒绝");
-                }
-            });
-
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(18,23,33));
+        getWindow().setStatusBarColor(Color.rgb(18, 23, 33));
         getWindow().setNavigationBarColor(Color.BLACK);
         buildLauncher();
         AlarmScheduler.scheduleBaseline(this);
@@ -98,6 +92,28 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         }
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (grantResults == null || grantResults.length == 0) return;
+        switch (requestCode) {
+            case REQ_PERM_STORAGE:
+                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    toast("存储权限已授予");
+                } else {
+                    toast("存储权限被拒绝");
+                }
+                break;
+            case REQ_PERM_CAMERA:
+                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    toast("相机权限已授予");
+                } else {
+                    toast("相机权限被拒绝");
+                }
+                break;
+        }
+    }
+
     // ========= 全部文件权限判断 =========
     private boolean hasAllFilePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -112,55 +128,55 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             Uri uri = Uri.parse("package:" + getPackageName());
             intent.setData(uri);
             startActivityForResult(intent, REQUEST_MANAGE_STORAGE);
-        }else{
+        } else {
             toast("Android10以下不需要该权限");
         }
     }
 
     // ========= 申请普通存储权限 =========
-    private void requestNormalStoragePermission(){
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU){
+    private void requestNormalStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             toast("Android13+不再需要普通存储权限");
             return;
         }
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
-            requestPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_PERM_STORAGE);
         }
     }
 
     // ========= 申请相机权限 =========
-    private void requestCameraPermission(){
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
-            requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
+    private void requestCameraPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_PERM_CAMERA);
         }
     }
 
     // ========= 服务器绑定弹窗回调 =========
     @Override
     public void needShowBindDialog(String bindId, boolean isChanged) {
-        String title,msg;
-        if(isChanged){
+        String title, msg;
+        if (isChanged) {
             title = "服务器标识码已变更";
-            msg = "服务器重启，标识码更新。是否信任该新服务器？\nID:"+bindId;
-        }else{
+            msg = "服务器重启，标识码更新。是否信任该新服务器？\nID:" + bindId;
+        } else {
             title = "收到新服务器绑定请求";
-            msg = "是否信任此服务器？\nID:"+bindId;
+            msg = "是否信任此服务器？\nID:" + bindId;
         }
 
         new AlertDialog.Builder(MainActivity.this)
                 .setTitle(title)
                 .setMessage(msg)
                 .setPositiveButton("接收", (dialog, which) -> {
-                    boolean ok = LogManager.setTrustedServerBindId(MainActivity.this,bindId);
-                    if(ok){
+                    boolean ok = LogManager.setTrustedServerBindId(MainActivity.this, bindId);
+                    if (ok) {
                         CommandPoller.start(MainActivity.this);
                         toast("已信任该服务器");
-                    }else{
+                    } else {
                         toast("保存信任ID失败，请检查存储权限");
                     }
                 })
                 .setNegativeButton("拒绝", (dialog, which) -> {
-                    LogManager.log(MainActivity.this,LogManager.SUB_COMMAND,"用户拒绝服务器bindId="+bindId);
+                    LogManager.log(MainActivity.this, LogManager.SUB_COMMAND, "用户拒绝服务器bindId=" + bindId);
                     toast("已拒绝该服务器");
                 })
                 .setCancelable(false)
@@ -168,11 +184,11 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     }
 
     // ========= tail‑f 实时查看日志弹窗，最多20行 =========
-    private void showTailLogDialog(){
+    private void showTailLogDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16),dp(16),dp(16),dp(16));
+        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
 
         tailLogText = new TextView(this);
         tailLogText.setTextSize(11);
@@ -192,78 +208,77 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         });
         tailLogDialog = builder.create();
         tailLogDialog.show();
-        // 启动自动刷新
         tailHandler.post(tailRunnable);
     }
 
     private void buildLauncher() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16),dp(18),dp(16),dp(18));
-        root.setBackgroundColor(Color.rgb(18,23,33));
+        root.setPadding(dp(16), dp(18), dp(16), dp(18));
+        root.setBackgroundColor(Color.rgb(18, 23, 33));
         TextView title = new TextView(this);
         title.setText("本地启动控制中心");
         title.setTextColor(Color.WHITE);
         title.setTextSize(25);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0,dp(20),0,dp(8));
+        title.setPadding(0, dp(20), 0, dp(8));
         root.addView(title);
         TextView subtitle = new TextView(this);
         subtitle.setText("所有操作由你手动点击");
         subtitle.setTextColor(Color.LTGRAY);
         subtitle.setTextSize(13);
         subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0,0,0,dp(24));
+        subtitle.setPadding(0, 0, 0, dp(24));
         root.addView(subtitle);
-        addButton(root,"浏览器",
+        addButton(root, "浏览器",
                 () -> startActivity(
-                        new Intent(this,BrowserActivity.class)
+                        new Intent(this, BrowserActivity.class)
                 )
         );
-        addButton(root,"打开 Termux",
+        addButton(root, "打开 Termux",
                 this::openTermux
         );
-        addButton(root,"立即亮屏测试（5分钟）",
+        addButton(root, "立即亮屏测试（5分钟）",
                 () -> startActivity(
-                        new Intent(this,PatternActivity.class)
+                        new Intent(this, PatternActivity.class)
                 )
         );
-        addButton(root,"亮屏权限设置",
+        addButton(root, "亮屏权限设置",
                 () -> startActivity(
-                        new Intent(this,SettingsActivity.class)
+                        new Intent(this, SettingsActivity.class)
                 )
         );
         // ================= 定时任务管理 =================
         addSection(root, "设备定时任务");
         timerStatus = new TextView(this);
-        timerStatus.setTextColor(Color.rgb(130,220,170));
+        timerStatus.setTextColor(Color.rgb(130, 220, 170));
         timerStatus.setTextSize(14);
         timerStatus.setGravity(Gravity.CENTER);
-        timerStatus.setPadding(dp(8),dp(12),dp(8),dp(12));
+        timerStatus.setPadding(dp(8), dp(12), dp(8), dp(12));
         root.addView(timerStatus);
         updateTimerStatus();
 
-        addButton(root,"配置服务器地址和Token",
+        addButton(root, "配置服务器地址和Token",
                 this::showServerDialog
         );
-        addButton(root,"设置定时周期（小时/分钟）",
+        addButton(root, "设置定时周期（小时/分钟）",
                 this::showIntervalDialog
         );
-        addButton(root,"启用定时器",
+        addButton(root, "启用定时器",
                 () -> {
                     AlarmScheduler.enable(this);
                     updateTimerStatus();
                     toast("定时器已启用");
                 }
         );
-        addButton(root,"关闭定时器",
+        addButton(root, "关闭定时器",
                 () -> {
                     AlarmScheduler.cancel(this);
                     updateTimerStatus();
                     toast("定时器已关闭");
                 }
         );
-        addButton(root,"立即触发一轮任务",
+        addButton(root, "立即触发一轮任务",
                 () -> {
                     if (!ConfigManager.isEnabled(this)) {
                         toast("请先启用定时器");
@@ -274,35 +289,35 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     toast("已发送立即触发请求");
                 }
         );
-        addButton(root,"查看日志（打开文件管理器）", this::openLogFolder);
-        addButton(root,"实时查看日志(tail‑20行)", this::showTailLogDialog);
+        addButton(root, "查看日志（打开文件管理器）", this::openLogFolder);
+        addButton(root, "实时查看日志(tail‑20行)", this::showTailLogDialog);
 
         // ======================【服务器信任管理按钮】======================
-        addSection(root,"服务器信任管理");
-        addButton(root,"查看当前信任服务器ID",()->{
+        addSection(root, "服务器信任管理");
+        addButton(root, "查看当前信任服务器ID", () -> {
             String id = LogManager.getTrustedServerBindId(this);
-            if(id == null || id.isEmpty()){
+            if (id == null || id.isEmpty()) {
                 new AlertDialog.Builder(this)
                         .setTitle("受信任服务器")
                         .setMessage("当前未信任任何服务器")
-                        .setPositiveButton("确定",null).show();
-            }else{
+                        .setPositiveButton("确定", null).show();
+            } else {
                 new AlertDialog.Builder(this)
                         .setTitle("受信任服务器bindId")
                         .setMessage(id)
-                        .setPositiveButton("确定",null).show();
+                        .setPositiveButton("确定", null).show();
             }
         });
-        addButton(root,"清除服务器信任标识码",()->{
+        addButton(root, "清除服务器信任标识码", () -> {
             new AlertDialog.Builder(this)
                     .setTitle("清除信任")
                     .setMessage("确定清除本机信任的服务器标识码？清除后需要重新确认服务器。")
-                    .setNegativeButton("取消",null)
-                    .setPositiveButton("确定",(d,w)->{
-                        boolean ok = LogManager.setTrustedServerBindId(this,null);
-                        if(ok){
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("确定", (d, w) -> {
+                        boolean ok = LogManager.setTrustedServerBindId(this, null);
+                        if (ok) {
                             toast("已清除服务器信任标识码");
-                        }else{
+                        } else {
                             toast("清除失败，请检查存储权限");
                         }
                     }).show();
@@ -310,26 +325,26 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
 
         // ================= 系统设置+权限申请 =================
         addSection(root, "系统设置与权限申请");
-        addButton(root,"申请全部文件访问权限", this::requestAllFilePermission);
-        addButton(root,"申请普通存储权限", this::requestNormalStoragePermission);
-        addButton(root,"申请相机权限", this::requestCameraPermission);
+        addButton(root, "申请全部文件访问权限", this::requestAllFilePermission);
+        addButton(root, "申请普通存储权限", this::requestNormalStoragePermission);
+        addButton(root, "申请相机权限", this::requestCameraPermission);
 
-        addButton(root,"Wi‑Fi 设置",
+        addButton(root, "Wi‑Fi 设置",
                 () -> openSystemSettings(Settings.ACTION_WIFI_SETTINGS)
         );
-        addButton(root,"网络设置",
+        addButton(root, "网络设置",
                 () -> openSystemSettings(Settings.ACTION_WIRELESS_SETTINGS)
         );
-        addButton(root,"流量使用情况",
+        addButton(root, "流量使用情况",
                 () -> openSystemSettings(Settings.ACTION_DATA_USAGE_SETTINGS)
         );
-        addButton(root,"本应用权限与后台设置",
+        addButton(root, "本应用权限与后台设置",
                 () -> openSystemSettings(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:" + getPackageName())
                 )
         );
-        addButton(root,"退出启动器",
+        addButton(root, "退出启动器",
                 this::finish
         );
         ScrollView scroll = new ScrollView(this);
@@ -337,7 +352,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         setContentView(scroll);
     }
 
-    // 打开日志文件夹
     private void openLogFolder() {
         File baseDir = getExternalFilesDir(null);
         File logDir = new File(baseDir, "ScreenWakeLogs");
@@ -370,9 +384,9 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private void addSection(LinearLayout root, String label) {
         TextView text = new TextView(this);
         text.setText(label);
-        text.setTextColor(Color.rgb(100,180,255));
+        text.setTextColor(Color.rgb(100, 180, 255));
         text.setTextSize(18);
-        text.setPadding(0,dp(22),0,dp(8));
+        text.setPadding(0, dp(22), 0, dp(8));
         root.addView(text);
     }
 
@@ -386,12 +400,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         button.setTextColor(Color.WHITE);
         button.setTextSize(16);
         button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(10),dp(15),dp(10),dp(15));
-        button.setBackgroundColor(Color.rgb(48,59,79));
+        button.setPadding(dp(10), dp(15), dp(10), dp(15));
+        button.setBackgroundColor(Color.rgb(48, 59, 79));
         LinearLayout.LayoutParams lp =
-                new LinearLayout.LayoutParams(-1,-2);
+                new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(12);
-        root.addView(button,lp);
+        root.addView(button, lp);
         button.setOnClickListener(v -> action.run());
     }
 
@@ -425,7 +439,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private void showIntervalDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.HORIZONTAL);
-        layout.setPadding(dp(20),dp(12),dp(20),dp(8));
+        layout.setPadding(dp(20), dp(12), dp(20), dp(8));
         EditText hours = new EditText(this);
         hours.setHint("小时");
         hours.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -439,15 +453,15 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         minutes.setText(String.valueOf(
                 ConfigManager.getIntervalMinutes(this) % 60));
         LinearLayout.LayoutParams lp =
-                new LinearLayout.LayoutParams(0,-2,1);
-        layout.addView(hours,lp);
-        layout.addView(minutes,lp);
+                new LinearLayout.LayoutParams(0, -2, 1);
+        layout.addView(hours, lp);
+        layout.addView(minutes, lp);
         new AlertDialog.Builder(this)
                 .setTitle("设置定时周期")
                 .setMessage("范围：1分钟至30天")
                 .setView(layout)
-                .setNegativeButton("取消",null)
-                .setPositiveButton("保存",(dialog,which) -> {
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> {
                     try {
                         int h = Integer.parseInt(
                                 hours.getText().toString().trim());
@@ -457,12 +471,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                             toast("时间格式不正确");
                             return;
                         }
-                        long total = (long)h * 60L + m;
+                        long total = (long) h * 60L + m;
                         if (total < 1 || total > 43200) {
                             toast("周期必须在1分钟至30天之间");
                             return;
                         }
-                        ConfigManager.setIntervalMinutes(this,total);
+                        ConfigManager.setIntervalMinutes(this, total);
                         if (ConfigManager.isEnabled(this)) {
                             AlarmScheduler.scheduleNext(this);
                         }
@@ -479,7 +493,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private void showServerDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(20),dp(8),dp(20),dp(8));
+        layout.setPadding(dp(20), dp(8), dp(20), dp(8));
         EditText server = new EditText(this);
         server.setHint("服务器地址，例如 http://1.2.3.4:3357");
         server.setSingleLine(true);
@@ -496,8 +510,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 .setTitle("服务器配置")
                 .setMessage("请填写服务器地址（http/https 均可）和设备Token")
                 .setView(layout)
-                .setNegativeButton("取消",null)
-                .setPositiveButton("保存",(dialog,which) -> {
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> {
                     String url = server.getText().toString().trim();
                     String key = token.getText().toString().trim();
                     if (url.isEmpty()
@@ -507,8 +521,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                         toast("请填写有效的服务器地址（http 或 https）和Token");
                         return;
                     }
-                    ConfigManager.setServerUrl(this,url);
-                    ConfigManager.setToken(this,key);
+                    ConfigManager.setServerUrl(this, url);
+                    ConfigManager.setToken(this, key);
                     toast("服务器配置已保存");
                 })
                 .show();
@@ -520,7 +534,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     getPackageManager().getLaunchIntentForPackage(
                             "com.termux"
                     );
-            if(intent == null) {
+            if (intent == null) {
                 Toast.makeText(
                         this,
                         "没有找到 Termux",
@@ -529,23 +543,23 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 return;
             }
             startActivity(intent);
-        } catch(Exception e) {
+        } catch (Exception e) {
             showError(e);
         }
     }
 
     private void openSystemSettings(String action) {
-        openSystemSettings(action,null);
+        openSystemSettings(action, null);
     }
 
-    private void openSystemSettings(String action,Uri uri) {
+    private void openSystemSettings(String action, Uri uri) {
         try {
             Intent intent = new Intent(action);
-            if(uri != null) {
+            if (uri != null) {
                 intent.setData(uri);
             }
             startActivity(intent);
-        } catch(Exception e) {
+        } catch (Exception e) {
             showError(e);
         }
     }
@@ -566,5 +580,3 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         ).show();
     }
 }
-
-
