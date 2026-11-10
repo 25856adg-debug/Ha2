@@ -42,6 +42,11 @@ public final class WebMonitor {
     private static Runnable wakeRunnable = null;
 
     private static int sendIntervalSec = 0;
+
+    // 给界面直接显示的状态文字
+    private static volatile String lastStatus = "未启动";
+    private static volatile long lastStatusTs = 0L;
+
     private static final AtomicBoolean checking = new AtomicBoolean(false);
     private static volatile boolean sleeping = false;
     private static volatile long sleepEndTs = 0L;
@@ -67,6 +72,7 @@ public final class WebMonitor {
 
         LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                 "启动自动检测：每10秒一次，检测源=" + srcDesc);
+        setStatus("检测中（10秒一次）");
         scheduleNextCheck(0L);
     }
 
@@ -79,6 +85,7 @@ public final class WebMonitor {
         if (appCtx != null) {
             LogManager.log(appCtx, LogManager.SUB_UPLOAD, "已停止检测");
         }
+        setStatus("已停止");
     }
 
     // ==================== 清除休眠立即恢复 ====================
@@ -180,7 +187,7 @@ public final class WebMonitor {
             if (is == null) return null;
             String content = readStreamToString(is);
             if (content == null) return null;
-            // 取第一个非空行，兼容文件里带换行或多个空行的情况
+            // 取第一个非空行
             String[] lines = content.split("\n");
             for (String line : lines) {
                 String t = line.trim();
@@ -218,10 +225,12 @@ public final class WebMonitor {
 
         if (!fileMode && !(httpCode >= 200 && httpCode < 300)) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, "网页打不开，本轮不动作");
+            setStatus("检测失败：网页打不开（HTTP " + httpCode + "）");
             return;
         }
         if (body == null) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "读取失败，本轮不动作");
+            setStatus("检测失败：读不到" + src + "内容");
             return;
         }
 
@@ -246,6 +255,7 @@ public final class WebMonitor {
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
                     src + "返回0：停止检测与发送，休眠 " + minutes
                             + " 分钟，预计 " + formatTime(sleepEndTs) + " 自动恢复");
+            setStatus("已检测到 0，进入休眠 " + minutes + " 分钟");
 
             wakeRunnable = new Runnable() {
                 @Override
@@ -263,6 +273,7 @@ public final class WebMonitor {
             // ===== 1：立即发一次 =====
             stopSendLoop("返回1，切换单次发送");
             LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1，立即发送一次硬件信息");
+            setStatus("已检测到 1，正在发送…");
             sendOnce(ctx);
 
         } else if (isPureNumber(flag)) {
@@ -274,17 +285,21 @@ public final class WebMonitor {
             }
             if (sec <= 0) {
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, "非法间隔" + flag + "，忽略");
+                setStatus("检测到非法间隔[" + flag + "]，不执行");
             } else if (sec == 1) {
                 stopSendLoop("返回1秒，按单次发送");
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1秒，按单次发送处理");
+                setStatus("已检测到 1，正在发送…");
                 sendOnce(ctx);
             } else {
+                setStatus("已检测到 " + sec + "，每" + sec + "秒发送一次");
                 startSendLoop(ctx, sec);
             }
 
         } else {
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
                     src + "返回[" + flag + "]不是0/1/数字，本轮不动作");
+            setStatus("检测到 [" + flag + "]，不是0/1/数字，不执行");
         }
     }
 
@@ -292,11 +307,14 @@ public final class WebMonitor {
     private static void sendOnce(Context ctx) {
         try {
             JSONObject hardware = DeviceInfo.collect(ctx);
-            DeviceUploader.send(ctx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) ->
-                    LogManager.log(ctx, LogManager.SUB_UPLOAD,
-                            "单次上报结果 ok=" + ok + " msg=" + msg));
+            DeviceUploader.send(ctx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
+                LogManager.log(ctx, LogManager.SUB_UPLOAD,
+                        "单次上报结果 ok=" + ok + " msg=" + msg);
+                setStatus(classify(ok, msg));
+            });
         } catch (Exception e) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, "单次采集异常：" + e.getMessage());
+            setStatus("发送失败：采集异常 " + e.getMessage());
         }
     }
 
@@ -314,9 +332,11 @@ public final class WebMonitor {
                 if (sleeping || sendRunnable != this || appCtx == null) return;
                 try {
                     JSONObject hardware = DeviceInfo.collect(appCtx);
-                    DeviceUploader.send(appCtx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) ->
-                            LogManager.log(appCtx, LogManager.SUB_UPLOAD,
-                                    "循环上报(" + sendIntervalSec + "s) ok=" + ok + " msg=" + msg));
+                    DeviceUploader.send(appCtx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
+                        LogManager.log(appCtx, LogManager.SUB_UPLOAD,
+                                "循环上报(" + sendIntervalSec + "s) ok=" + ok + " msg=" + msg);
+                        setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
+                    });
                 } catch (Exception e) {
                     LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                             "循环采集异常：" + e.getMessage());
@@ -366,6 +386,61 @@ public final class WebMonitor {
         return new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date(ts));
     }
 
+    // ==================== 状态文字 ====================
+    private static void setStatus(String s) {
+        lastStatus = s;
+        lastStatusTs = System.currentTimeMillis();
+    }
+
+    // 把上传结果翻译成界面能直接看懂的话
+    private static String classify(boolean ok, String msg) {
+        if (ok) return "发送成功";
+
+        String m = msg == null ? "" : msg;
+
+        // 飞书地址/配置问题
+        if (m.contains("未配置") || m.contains("地址错误") || m.contains("密钥")) {
+            return "飞书地址错误：" + m;
+        }
+        // HTTP 400/403/404 基本都是 webhook 填错或被禁用
+        if (m.contains("HTTP 400") || m.contains("HTTP 401")
+                || m.contains("HTTP 403") || m.contains("HTTP 404")) {
+            return "飞书地址错误（" + briefHttp(m) + "）";
+        }
+        // 网络层问题
+        if (m.contains("ConnectException") || m.contains("UnknownHost")
+                || m.contains("SocketTimeout") || m.contains("SSL")
+                || m.contains("Unable to resolve") || m.contains("Network is unreachable")) {
+            return "发送失败：网络错误";
+        }
+        if (m.contains("HTTP 5")) {
+            return "发送失败：飞书服务异常（" + briefHttp(m) + "）";
+        }
+        return "发送失败：" + shortMsg(m);
+    }
+
+    private static String briefHttp(String m) {
+        int i = m.indexOf("HTTP ");
+        if (i < 0) return "HTTP ?";
+        int end = Math.min(m.length(), i + 9);
+        return m.substring(i, end).trim();
+    }
+
+    private static String shortMsg(String m) {
+        if (m.length() <= 40) return m;
+        return m.substring(0, 40) + "…";
+    }
+
+    /** 给界面用：最近一次状态文字 */
+    public static String getLastStatus() {
+        return lastStatus;
+    }
+
+    /** 给界面用：最近一次状态变化时间戳 */
+    public static long getLastStatusTs() {
+        return lastStatusTs;
+    }
+
     // ==================== 状态查询 ====================
     public static boolean isSleeping() { return sleeping; }
     public static boolean isStarted() { return started; }
@@ -376,5 +451,3 @@ public final class WebMonitor {
         return Math.max(0, sleepEndTs - System.currentTimeMillis());
     }
 }
-
-
