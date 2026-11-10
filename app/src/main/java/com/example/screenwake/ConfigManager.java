@@ -7,156 +7,117 @@ import java.util.UUID;
 
 public final class ConfigManager {
 
-    private static final String PREF = "screenwake_config";
+    private static final String PREF_NAME = "ScreenWakeConfig";
 
-    private static SharedPreferences prefs;
+    private static final String KEY_SERVER_URL     = "server_url";
+    private static final String KEY_TOKEN          = "token";
+    private static final String KEY_DEVICE_ID      = "device_id";
+    private static final String KEY_ENABLED        = "alarm_enabled";
+    private static final String KEY_INTERVAL_MIN   = "interval_minutes";
+    private static final String KEY_NEXT_TRIGGER   = "next_trigger";
+    private static final String KEY_MONITOR_URL    = "monitor_url";
+    private static final String KEY_FEISHU_HOOK    = "feishu_hook";
+    private static final String KEY_SLEEP_MINUTES  = "sleep_minutes";
 
     private ConfigManager() {}
 
-    private static synchronized SharedPreferences get(Context context) {
+    private static SharedPreferences pref(Context ctx) {
+        return ctx.getApplicationContext()
+                .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+    }
 
-        if (prefs == null) {
-            prefs = context.getApplicationContext()
-                    .getSharedPreferences(PREF, Context.MODE_PRIVATE);
+    // ================= 服务器地址（旧版自建服务器用，保留） =================
+    public static String getServerUrl(Context ctx) {
+        return pref(ctx).getString(KEY_SERVER_URL, "");
+    }
+
+    public static void setServerUrl(Context ctx, String url) {
+        pref(ctx).edit().putString(KEY_SERVER_URL, url == null ? "" : url).apply();
+    }
+
+    // ================= 设备Token =================
+    public static String getToken(Context ctx) {
+        return pref(ctx).getString(KEY_TOKEN, "");
+    }
+
+    public static void setToken(Context ctx, String token) {
+        pref(ctx).edit().putString(KEY_TOKEN, token == null ? "" : token).apply();
+    }
+
+    // 别名，给 DeviceUploader 旧调用兼容
+    public static String getDeviceToken(Context ctx) { return getToken(ctx); }
+    public static void setDeviceToken(Context ctx, String token) { setToken(ctx, token); }
+
+    // ================= 设备唯一ID（首次自动生成并持久化） =================
+    public static String getDeviceId(Context ctx) {
+        SharedPreferences p = pref(ctx);
+        String id = p.getString(KEY_DEVICE_ID, "");
+        if (id == null || id.trim().isEmpty()) {
+            id = "dev-" + UUID.randomUUID().toString().replace("-", "");
+            if (id.length() > 24) id = id.substring(0, 24);
+            p.edit().putString(KEY_DEVICE_ID, id).apply();
         }
-
-        return prefs;
-    }
-
-    // ================= 服务器地址 =================
-
-    public static String getServerUrl(Context c) {
-        return get(c).getString("server_url", "");
-    }
-
-    public static void setServerUrl(Context c, String url) {
-        get(c).edit()
-                .putString("server_url", url == null ? "" : url.trim())
-                .apply();
-    }
-
-    // ================= Token =================
-
-    // 兼容旧方法名
-    public static String getToken(Context c) {
-        return get(c).getString("device_token", "");
-    }
-
-    public static void setToken(Context c, String token) {
-        get(c).edit()
-                .putString("device_token",
-                        token == null ? "" : token.trim())
-                .apply();
-    }
-
-    // 新方法名
-    public static String getDeviceToken(Context c) {
-        return getToken(c);
-    }
-
-    public static void setDeviceToken(Context c, String token) {
-        setToken(c, token);
-    }
-
-    // ================= 设备ID =================
-
-    public static synchronized String getDeviceId(Context c) {
-
-        SharedPreferences p = get(c);
-
-        String id = p.getString("device_id", null);
-
-        if (id == null || id.isEmpty()) {
-            id = UUID.randomUUID().toString();
-            p.edit().putString("device_id", id).apply();
-        }
-
         return id;
     }
 
-    // ================= 定时间隔 =================
-
-    public static long getIntervalMinutes(Context c) {
-        return get(c).getLong("interval_minutes", 540L);
+    public static void setDeviceId(Context ctx, String id) {
+        pref(ctx).edit().putString(KEY_DEVICE_ID, id == null ? "" : id).apply();
     }
 
-    public static void setIntervalMinutes(Context c, long minutes) {
-
-        minutes = Math.max(1L, Math.min(minutes, 43200L));
-
-        get(c).edit()
-                .putLong("interval_minutes", minutes)
-                .apply();
+    // ================= 定时器开关 / 周期 / 下次触发（AlarmScheduler 用） =================
+    public static boolean isEnabled(Context ctx) {
+        return pref(ctx).getBoolean(KEY_ENABLED, false);
     }
 
-    public static void setInterval(Context c, int hours, int minutes) {
-        setIntervalMinutes(c, (long) hours * 60L + minutes);
+    public static void setEnabled(Context ctx, boolean enabled) {
+        pref(ctx).edit().putBoolean(KEY_ENABLED, enabled).apply();
     }
 
-    // ================= 定时器状态 =================
+    public static void enable(Context ctx) { setEnabled(ctx, true); }
+    public static void disable(Context ctx) { setEnabled(ctx, false); }
 
-    public static boolean isEnabled(Context c) {
-        return get(c).getBoolean("timer_enabled", false);
+    public static long getIntervalMinutes(Context ctx) {
+        return pref(ctx).getLong(KEY_INTERVAL_MIN, 60L);   // 默认60分钟
     }
 
-    public static void setEnabled(Context c, boolean enabled) {
-        get(c).edit()
-                .putBoolean("timer_enabled", enabled)
-                .apply();
+    public static void setIntervalMinutes(Context ctx, long minutes) {
+        pref(ctx).edit().putLong(KEY_INTERVAL_MIN, minutes).apply();
     }
 
-    public static boolean isPaused(Context c) {
-        return get(c).getBoolean("timer_paused", false);
+    public static long getNextTrigger(Context ctx) {
+        return pref(ctx).getLong(KEY_NEXT_TRIGGER, 0L);
     }
 
-    public static void setPaused(Context c, boolean paused) {
-        get(c).edit()
-                .putBoolean("timer_paused", paused)
-                .apply();
+    public static void setNextTrigger(Context ctx, long ts) {
+        pref(ctx).edit().putLong(KEY_NEXT_TRIGGER, ts).apply();
     }
 
-    // ================= 触发时间 =================
-
-    public static long getNextTrigger(Context c) {
-        return get(c).getLong("next_trigger", 0L);
+    // ================= 监控网页地址 =================
+    public static String getMonitorUrl(Context ctx) {
+        return pref(ctx).getString(KEY_MONITOR_URL, "");
     }
 
-    public static void setNextTrigger(Context c, long timeMillis) {
-        get(c).edit()
-                .putLong("next_trigger", timeMillis)
-                .apply();
+    public static void setMonitorUrl(Context ctx, String url) {
+        pref(ctx).edit().putString(KEY_MONITOR_URL, url == null ? "" : url).apply();
     }
 
-    public static long getLastTrigger(Context c) {
-        return get(c).getLong("last_trigger", 0L);
+    // ================= 飞书 Webhook =================
+    public static String getFeishuWebhook(Context ctx) {
+        return pref(ctx).getString(KEY_FEISHU_HOOK, "");
     }
 
-    public static void setLastTrigger(Context c, long timeMillis) {
-        get(c).edit()
-                .putLong("last_trigger", timeMillis)
-                .apply();
+    public static void setFeishuWebhook(Context ctx, String hook) {
+        pref(ctx).edit().putString(KEY_FEISHU_HOOK, hook == null ? "" : hook).apply();
     }
 
-    // ================= 指令窗口持久化 =================
-
-    public static long getCommandWindowEnd(Context c) {
-        return get(c).getLong("command_window_end", 0L);
+    // ================= 休眠时长（分钟，1~1440） =================
+    public static int getSleepMinutes(Context ctx) {
+        return pref(ctx).getInt(KEY_SLEEP_MINUTES, 60);   // 默认60分钟
     }
 
-    public static void setCommandWindowEnd(Context c, long timeMillis) {
-        get(c).edit()
-                .putLong("command_window_end", timeMillis)
-                .apply();
-    }
-
-    public static boolean isCommandWindowActive(Context c) {
-        return getCommandWindowEnd(c) > System.currentTimeMillis();
-    }
-
-    public static void clearCommandWindow(Context c) {
-        get(c).edit()
-                .putLong("command_window_end", 0L)
-                .apply();
+    public static void setSleepMinutes(Context ctx, int minutes) {
+        if (minutes < 1) minutes = 1;
+        if (minutes > 1440) minutes = 1440;
+        pref(ctx).edit().putInt(KEY_SLEEP_MINUTES, minutes).apply();
     }
 }
-
