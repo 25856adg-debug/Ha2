@@ -39,6 +39,10 @@
         android:label="接收器"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
+        <activity
+          android:name=".MultiWsActivity"
+          android:exported="false"
+          android:label="五路接收" />
 
         <!-- 主界面 -->
         <activity
