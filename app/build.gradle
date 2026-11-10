@@ -21,6 +21,5 @@ android {
 }
 
 dependencies {
-    // 新增：ActivityResultContracts 动态权限需要
-    implementation "androidx.activity:activity‑ktx:1.8.2"
+    implementation "androidx.activity:activity:1.8.2"
 }
