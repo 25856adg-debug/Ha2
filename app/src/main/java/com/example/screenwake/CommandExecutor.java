@@ -2,6 +2,7 @@ package com.example.screenwake;
 
 import android.content.Context;
 import org.json.JSONObject;
+import java.util.Set;
 
 public final class CommandExecutor {
 
@@ -15,7 +16,7 @@ public final class CommandExecutor {
         );
     }
 
-    // ================= 只执行白名单中的指令 =================
+    // ================= 根据本机txt白名单校验指令 =================
     public static void execute(
             Context context,
             JSONObject command,
@@ -30,9 +31,16 @@ public final class CommandExecutor {
             finish(callback, commandId, false, "缺少指令ID");
             return;
         }
-
         if (action.isEmpty()) {
             finish(callback, commandId, false, "缺少指令名称");
+            return;
+        }
+
+        //【重点：每次收到指令实时读取磁盘白名单文件】
+        Set<String> allowActions = LogManager.readActionWhitelist(c);
+        if (!allowActions.contains(action)) {
+            LogManager.log(c, LogManager.SUB_COMMAND, "指令拒绝，不在本机白名单内 action="+action);
+            finish(callback, commandId, false, "指令["+action+"]不在本机白名单，拒绝执行");
             return;
         }
 
@@ -62,7 +70,7 @@ public final class CommandExecutor {
             }
 
         } catch (Exception e) {
-            LogManager.log(c,
+            LogManager.log(c, LogManager.SUB_COMMAND,
                     "指令执行异常，ID：" + commandId
                             + "，原因：" + e.getMessage());
             finish(callback, commandId, false,
@@ -105,7 +113,7 @@ public final class CommandExecutor {
                         "yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA);
         result.put("time", fmt.format(new java.util.Date()));
 
-        LogManager.log(c, "启动验证完成，设备：" + info.optString("model", ""));
+        LogManager.log(c, LogManager.SUB_COMMAND, "启动验证完成，设备：" + info.optString("model", ""));
 
         finish(callback, commandId, true, result.toString());
     }
@@ -128,6 +136,7 @@ public final class CommandExecutor {
         status.put("timer", timer);
         status.put("poll_running", CommandPoller.isRunning());
 
+        LogManager.log(c, LogManager.SUB_COMMAND, "执行getStatus指令");
         finish(callback, commandId, true, status.toString());
     }
 
@@ -149,7 +158,7 @@ public final class CommandExecutor {
             logs = "日志过长，仅返回最后部分：\n"
                     + logs.substring(logs.length() - MAX_LENGTH);
         }
-
+        LogManager.log(c, LogManager.SUB_COMMAND, "执行getLogs指令");
         finish(callback, commandId, true, logs);
     }
 
@@ -186,12 +195,11 @@ public final class CommandExecutor {
 
         ConfigManager.setIntervalMinutes(c, totalMinutes);
 
-        // 没有开关了：设置完直接启用并按新周期排下一次
         ConfigManager.setEnabled(c, true);
         ConfigManager.setPaused(c, false);
         AlarmScheduler.scheduleNext(c);
 
-        LogManager.log(c,
+        LogManager.log(c, LogManager.SUB_COMMAND,
                 "服务器修改定时周期为："
                         + hours + "小时" + minutes + "分钟，已按新周期开始发送");
 
