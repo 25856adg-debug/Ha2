@@ -305,6 +305,49 @@ public final class MultiWsReceiver {
         return sb.toString();
     }
 
+    /** 有没有"所有文件访问权限"（Android 11+ 用 MANAGE_EXTERNAL_STORAGE） */
+    public static boolean hasAllFilesAccess() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                return android.os.Environment.isExternalStorageManager();
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 跳到系统的"所有文件访问权限"页面。
+     * 注意：AndroidManifest.xml 里必须声明
+     *   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+     * 否则这个开关在系统页面里是灰的、点不动。
+     */
+    public static void requestAllFilesAccess(Context ctx) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.content.Intent it = new android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                it.setData(android.net.Uri.parse("package:" + ctx.getPackageName()));
+                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(it);
+            } else {
+                android.content.Intent it = new android.content.Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                it.setData(android.net.Uri.parse("package:" + ctx.getPackageName()));
+                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(it);
+            }
+        } catch (Throwable t) {
+            try {
+                android.content.Intent it = new android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(it);
+            } catch (Throwable ignored) {}
+        }
+    }
+
     /** 目录，方便打开查看文件 */
     public static String getDataDir() {
         return baseDir == null ? "" : baseDir.getAbsolutePath();
@@ -323,6 +366,30 @@ public final class MultiWsReceiver {
     /** 已解文件目录（每条一个文件，会越积越多） */
     public static String getDecryptedDir() {
         return baseDir == null ? "" : decryptedDir().getAbsolutePath();
+    }
+
+    /** 直接在 App 里看已解文件：最近的若干条，每条截断到 maxChars 字 */
+    public static String previewDecrypted(int maxFiles, int maxChars) {
+        try {
+            File d = decryptedDir();
+            if (d == null || !d.exists()) return "（还没有已解文件）";
+            File[] fs = d.listFiles();
+            if (fs == null || fs.length == 0) return "（还没有已解文件）";
+
+            java.util.Arrays.sort(fs, (a, b) -> b.getName().compareTo(a.getName()));
+            StringBuilder sb = new StringBuilder();
+            int n = Math.min(maxFiles, fs.length);
+            for (int i = 0; i < n; i++) {
+                String body = readText(fs[i]);
+                if (body.length() > maxChars) body = body.substring(0, maxChars) + "…";
+                sb.append("【").append(fs[i].getName()).append("】\n").append(body).append("\n\n");
+            }
+            sb.append("共 ").append(fs.length).append(" 个已解文件，上面显示最近 ").append(n).append(" 个\n");
+            sb.append("目录：").append(d.getAbsolutePath());
+            return sb.toString();
+        } catch (Exception e) {
+            return "读取失败：" + e.getMessage();
+        }
     }
 
     /** 当前密钥（内部调试用，界面上不要展示） */
@@ -571,8 +638,8 @@ public final class MultiWsReceiver {
             setStatus(slot, "已接收到（解密成功）");
             return;
         }
-
-        // 明文 kk 兼容（不推荐，但别丢）
+  
+      // 明文 kk 兼容（不推荐，但别丢）
         String t = payload == null ? "" : payload.trim();
         if (t.regionMatches(true, 0, "kk", 0, 2)) {
             String k = extractKeyFromPlain(t);
@@ -586,7 +653,8 @@ public final class MultiWsReceiver {
 
         appendPending(slot, payload);
         setStatus(slot, "解不开（已存待解）：" + triedSummary() + " 都试过了");
-                                 }
+    }
+
     /** 不泄露密钥内容，只报告试了哪几把、各多少位 */
     private static String triedSummary() {
         StringBuilder sb = new StringBuilder();
@@ -779,12 +847,12 @@ public final class MultiWsReceiver {
             if (d == null) return false;
             if (!d.exists() && !d.mkdirs()) return false;
             File probe = new File(d, ".w_test");
-            if (!probe.exists()) {
-                try (FileOutputStream fos = new FileOutputStream(probe)) {
-                    fos.write('1');
-                }
+            // 真写一个字节去验证，写不进去就是没权限
+            try (FileOutputStream fos = new FileOutputStream(probe)) {
+                fos.write('1');
             }
-            return probe.delete() || probe.exists();
+            probe.delete();
+            return true;
         } catch (Exception e) {
             return false;
         }
