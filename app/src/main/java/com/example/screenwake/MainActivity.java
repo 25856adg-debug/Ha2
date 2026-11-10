@@ -4,23 +4,27 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
-import android.content.UriPermission;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
+import android.text.method.ScrollingMovementMethod;
+import android.view.Gravity;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements CommandPoller.ServerBindNotifyCallback {
@@ -30,6 +34,33 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     }
     private TextView timerStatus;
     private static final int REQUEST_MANAGE_STORAGE = 10086;
+
+    // tail日志弹窗自动刷新
+    private final Handler tailHandler = new Handler(Looper.getMainLooper());
+    private AlertDialog tailLogDialog;
+    private TextView tailLogText;
+    private final Runnable tailRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if(tailLogDialog != null && tailLogText != null){
+                String txt = LogManager.readTail(MainActivity.this, LogManager.SUB_APP,20);
+                tailLogText.setText(txt);
+            }
+            if(tailLogDialog != null && tailLogDialog.isShowing()){
+                tailHandler.postDelayed(this,1200);
+            }
+        }
+    };
+
+    // 动态权限申请
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted) {
+                    toast("权限已授予");
+                } else {
+                    toast("权限被拒绝");
+                }
+            });
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -60,17 +91,17 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_MANAGE_STORAGE) {
             if (hasAllFilePermission()) {
-                toast("权限已获取，再次点击查看日志");
+                toast("全部文件权限已获取");
             } else {
-                toast("未授予全部文件访问权限，文件管理器可能无法打开目录");
+                toast("未授予全部文件访问权限");
             }
         }
     }
 
-    // ========= 权限判断：安卓11+ MANAGE_EXTERNAL_STORAGE =========
+    // ========= 全部文件权限判断 =========
     private boolean hasAllFilePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return Environment.isExternalStorageManager();
+            return android.os.Environment.isExternalStorageManager();
         }
         return true;
     }
@@ -81,10 +112,30 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             Uri uri = Uri.parse("package:" + getPackageName());
             intent.setData(uri);
             startActivityForResult(intent, REQUEST_MANAGE_STORAGE);
+        }else{
+            toast("Android10以下不需要该权限");
         }
     }
 
-    // ========= 收到服务器绑定弹窗 =========
+    // ========= 申请普通存储权限 =========
+    private void requestNormalStoragePermission(){
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU){
+            toast("Android13+不再需要普通存储权限");
+            return;
+        }
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
+            requestPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE);
+        }
+    }
+
+    // ========= 申请相机权限 =========
+    private void requestCameraPermission(){
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
+            requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
+        }
+    }
+
+    // ========= 服务器绑定弹窗回调 =========
     @Override
     public void needShowBindDialog(String bindId, boolean isChanged) {
         String title,msg;
@@ -114,6 +165,35 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 })
                 .setCancelable(false)
                 .show();
+    }
+
+    // ========= tail‑f 实时查看日志弹窗，最多20行 =========
+    private void showTailLogDialog(){
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(16),dp(16),dp(16),dp(16));
+
+        tailLogText = new TextView(this);
+        tailLogText.setTextSize(11);
+        tailLogText.setMaxHeight(dp(400));
+        tailLogText.setMovementMethod(ScrollingMovementMethod.getInstance());
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(tailLogText);
+        layout.addView(sv);
+
+        builder.setTitle("实时日志 tail‑20行");
+        builder.setView(layout);
+        builder.setNegativeButton("关闭", (dialog, which) -> {
+            tailHandler.removeCallbacks(tailRunnable);
+            tailLogDialog = null;
+            tailLogText = null;
+        });
+        tailLogDialog = builder.create();
+        tailLogDialog.show();
+        // 启动自动刷新
+        tailHandler.post(tailRunnable);
     }
 
     private void buildLauncher() {
@@ -194,8 +274,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     toast("已发送立即触发请求");
                 }
         );
-        // 【查看日志】修复版，带权限判断
-        addButton(root,"查看日志", this::openLogFolder);
+        addButton(root,"查看日志（打开文件管理器）", this::openLogFolder);
+        addButton(root,"实时查看日志(tail‑20行)", this::showTailLogDialog);
 
         // ======================【服务器信任管理按钮】======================
         addSection(root,"服务器信任管理");
@@ -228,8 +308,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     }).show();
         });
 
-        // ================= 原有系统设置 =================
-        addSection(root, "系统设置");
+        // ================= 系统设置+权限申请 =================
+        addSection(root, "系统设置与权限申请");
+        addButton(root,"申请全部文件访问权限", this::requestAllFilePermission);
+        addButton(root,"申请普通存储权限", this::requestNormalStoragePermission);
+        addButton(root,"申请相机权限", this::requestCameraPermission);
+
         addButton(root,"Wi‑Fi 设置",
                 () -> openSystemSettings(Settings.ACTION_WIFI_SETTINGS)
         );
@@ -253,7 +337,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         setContentView(scroll);
     }
 
-    // ========= 修复后的查看日志，带权限判断，兜底不闪退 =========
+    // 打开日志文件夹
     private void openLogFolder() {
         File baseDir = getExternalFilesDir(null);
         File logDir = new File(baseDir, "ScreenWakeLogs");
@@ -261,7 +345,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             toast("日志目录还未生成，请先触发一次上报");
             return;
         }
-        // 没有全部文件权限，先申请
         if (!hasAllFilePermission()) {
             new AlertDialog.Builder(this)
                     .setTitle("需要全部文件访问权限")
@@ -271,14 +354,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     .show();
             return;
         }
-        // 优先文件管理器打开文件夹
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(Uri.fromFile(logDir), "resource/folder");
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (intent.resolveActivity(getPackageManager()) != null) {
             startActivity(intent);
         } else {
-            // 兜底：选择文件查看器
             Intent chooser = new Intent(Intent.ACTION_GET_CONTENT);
             chooser.setType("*/*");
             chooser.addCategory(Intent.CATEGORY_OPENABLE);
@@ -354,6 +435,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         EditText minutes = new EditText(this);
         minutes.setHint("分钟");
         minutes.setInputType(InputType.TYPE_CLASS_NUMBER);
+        minutes.setSingleLine(true);
         minutes.setText(String.valueOf(
                 ConfigManager.getIntervalMinutes(this) % 60));
         LinearLayout.LayoutParams lp =
