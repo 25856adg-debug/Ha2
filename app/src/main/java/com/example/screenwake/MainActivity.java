@@ -4,12 +4,13 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
+import android.content.UriPermission;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.Settings;
 import android.text.InputType;
-import android.view.Gravity;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -19,6 +20,7 @@ import android.widget.Toast;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements CommandPoller.ServerBindNotifyCallback {
@@ -27,6 +29,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 getResources().getDisplayMetrics().density + 0.5f);
     }
     private TextView timerStatus;
+    private static final int REQUEST_MANAGE_STORAGE = 10086;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -43,18 +46,45 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         if (timerStatus != null) {
             updateTimerStatus();
         }
-        // 前台时注册回调，接收服务器绑定弹窗事件
         CommandPoller.setServerBindNotifyCallback(this);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        // 退后台，取消回调，不再接收弹窗事件
         CommandPoller.setServerBindNotifyCallback(null);
     }
 
-    // ========= 实现回调接口，收到需要弹窗事件 =========
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_MANAGE_STORAGE) {
+            if (hasAllFilePermission()) {
+                toast("权限已获取，再次点击查看日志");
+            } else {
+                toast("未授予全部文件访问权限，文件管理器可能无法打开目录");
+            }
+        }
+    }
+
+    // ========= 权限判断：安卓11+ MANAGE_EXTERNAL_STORAGE =========
+    private boolean hasAllFilePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        }
+        return true;
+    }
+
+    private void requestAllFilePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+            Uri uri = Uri.parse("package:" + getPackageName());
+            intent.setData(uri);
+            startActivityForResult(intent, REQUEST_MANAGE_STORAGE);
+        }
+    }
+
+    // ========= 收到服务器绑定弹窗 =========
     @Override
     public void needShowBindDialog(String bindId, boolean isChanged) {
         String title,msg;
@@ -164,7 +194,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                     toast("已发送立即触发请求");
                 }
         );
-        // 原来【刷新定时器状态】改成【查看日志】
+        // 【查看日志】修复版，带权限判断
         addButton(root,"查看日志", this::openLogFolder);
 
         // ======================【服务器信任管理按钮】======================
@@ -223,7 +253,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         setContentView(scroll);
     }
 
-    // 打开日志目录
+    // ========= 修复后的查看日志，带权限判断，兜底不闪退 =========
     private void openLogFolder() {
         File baseDir = getExternalFilesDir(null);
         File logDir = new File(baseDir, "ScreenWakeLogs");
@@ -231,17 +261,28 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             toast("日志目录还未生成，请先触发一次上报");
             return;
         }
+        // 没有全部文件权限，先申请
+        if (!hasAllFilePermission()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("需要全部文件访问权限")
+                    .setMessage("打开日志文件夹需要授予【所有文件访问权限】，前往授权？")
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("去授权", (d, w) -> requestAllFilePermission())
+                    .show();
+            return;
+        }
+        // 优先文件管理器打开文件夹
         Intent intent = new Intent(Intent.ACTION_VIEW);
-        Uri uri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3AAndroid%2Fdata%2Fcom.example.screenwake%2Ffiles%2FScreenWakeLogs");
-        intent.setDataAndType(uri, "resource/folder");
-        if (intent.resolveActivityInfo(getPackageManager(), 0) != null) {
+        intent.setDataAndType(Uri.fromFile(logDir), "resource/folder");
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (intent.resolveActivity(getPackageManager()) != null) {
             startActivity(intent);
         } else {
-            // 兜底方案
-            Intent fileIntent = new Intent(Intent.ACTION_GET_CONTENT);
-            fileIntent.setDataAndType(Uri.fromFile(logDir), "*/*");
-            fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
-            startActivity(Intent.createChooser(fileIntent, "打开日志文件夹"));
+            // 兜底：选择文件查看器
+            Intent chooser = new Intent(Intent.ACTION_GET_CONTENT);
+            chooser.setType("*/*");
+            chooser.addCategory(Intent.CATEGORY_OPENABLE);
+            startActivity(Intent.createChooser(chooser, "打开日志文件夹"));
         }
     }
 
@@ -443,3 +484,5 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         ).show();
     }
 }
+
+
