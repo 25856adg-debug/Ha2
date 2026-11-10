@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Wi-Fi -->
+    <!-- Wi‑Fi -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 
     <!-- 蓝牙 -->
@@ -30,9 +30,13 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
+    <!-- ============新增：<=Android12读写公共存储，Android13+不需要================ -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+
     <application
         android:allowBackup="false"
-        android:label="测试"
+        android:label="接收器"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
@@ -97,7 +101,7 @@
 
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Brief post-boot screen wake attempt and visible five-minute display"/>
+                android:value="Brief post‑boot screen wake attempt and visible five‑minute display"/>
 
         </service>
 
@@ -111,4 +115,5 @@
     </application>
 
 </manifest>
+
 
