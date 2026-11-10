@@ -67,7 +67,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         public void run() {
             updateTimerStatus();
             updateWebStatus();
-            statusHandler.postDelayed(this, 5000);
+            statusHandler.postDelayed(this, 2000);
         }
     };
 
@@ -507,15 +507,20 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         } else if (WebMonitor.isSleeping()) {
             long sec = WebMonitor.getSleepRemainMs() / 1000;
             state = "休眠中，剩余 " + (sec / 60) + " 分 " + (sec % 60) + " 秒";
-        } else if (WebMonitor.getSendIntervalSec() > 0) {
-            state = "检测中(10秒) + 每 " + WebMonitor.getSendIntervalSec() + " 秒发送";
         } else {
-            state = "检测中（10秒一次）";
+            state = WebMonitor.getLastStatus();
         }
+
+        long ts = WebMonitor.getLastStatusTs();
+        String timeText = ts > 0
+                ? new SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                .format(new Date(ts))
+                : "--:--:--";
 
         String info = "检测源：" + src
                 + "\n状态：" + state
-                + "\n休眠时长：" + ConfigManager.getSleepMinutes(this) + " 分钟";
+                + "\n更新时间：" + timeText
+                + "\n休眠设定：" + ConfigManager.getSleepMinutes(this) + " 分钟";
         webStatus.setText(info);
     }
 
@@ -713,8 +718,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 })
                 .show();
     }
-
-    // ================= 服务器配置（旧版保留） =================
+// ================= 服务器配置（旧版保留） =================
     private void showServerDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -854,6 +858,4 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         Toast.makeText(this, "操作失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
     }
 }
-
-
-
+     
