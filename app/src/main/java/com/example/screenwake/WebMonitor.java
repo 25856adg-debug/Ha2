@@ -18,6 +18,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class WebMonitor {
 
@@ -30,6 +32,9 @@ public final class WebMonitor {
     private static final int  MAX_SEND_INTERVAL_SEC = 500;
     private static final int  MIN_SLEEP_MINUTES = 1;
     private static final int  MAX_SLEEP_MINUTES = 1440;
+
+    // 网页返回了页面源码、但里面没有一个能用的数字
+private static final String NO_VALUE_MARK = "@@NOVALUE@@";
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
@@ -57,7 +62,7 @@ public final class WebMonitor {
     // ==================== 启动 ====================
     public static synchronized void start(Context ctx, String url, String hook) {
         appCtx = ctx.getApplicationContext();
-        monitorUrl = url == null ? "" : url.trim();
+monitorUrl = url == null ? "" : url.trim();
         feishuHook = hook == null ? "" : hook.trim();
 
         cancelAll("重启检测任务");
@@ -89,7 +94,7 @@ public final class WebMonitor {
     }
 
     // ==================== 清除休眠立即恢复 ====================
-    public static synchronized void clearSleepAndResume() {
+public static synchronized void clearSleepAndResume() {
         if (appCtx == null) return;
         if (wakeRunnable != null) {
             MAIN.removeCallbacks(wakeRunnable);
@@ -119,7 +124,7 @@ public final class WebMonitor {
 
     private static void doCheckOnce() {
         if (!checking.compareAndSet(false, true)) {
-            scheduleNextCheck(CHECK_INTERVAL_MS);
+scheduleNextCheck(CHECK_INTERVAL_MS);
             return;
         }
 
@@ -144,19 +149,43 @@ public final class WebMonitor {
                 // ===== 网页检测 =====
                 String urlStr = monitorUrl;
                 try {
-                    URL urlObj = new URL(urlStr);
-                    HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
-                    conn.setConnectTimeout(8000);
-                    conn.setReadTimeout(8000);
-                    conn.setRequestMethod("GET");
-                    conn.setUseCaches(false);
-                    httpCode = conn.getResponseCode();
-                    InputStream is = (httpCode >= 200 && httpCode < 300)
-                            ? conn.getInputStream() : conn.getErrorStream();
-                    if (is != null) {
-                        body = readStreamToString(is);
+                    if (urlStr != null && urlStr.toLowerCase(Locale.getDefault()).endsWith("/stream")) {
+                        // 地址本身就是 SSE 流，直接读首条 data
+                        body = fetchStreamValue(urlStr);
+httpCode = body != null ? 200 : -1;
+                    } else {
+                        URL urlObj = new URL(urlStr);
+                        HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
+                        conn.setConnectTimeout(8000);
+                        conn.setReadTimeout(8000);
+                        conn.setRequestMethod("GET");
+                        conn.setRequestProperty("Cache-Control", "no-cache");
+                        conn.setUseCaches(false);
+                        httpCode = conn.getResponseCode();
+                        InputStream is = (httpCode >= 200 && httpCode < 300)
+                                ? conn.getInputStream() : conn.getErrorStream();
+                        if (is != null) {
+                            body = readStreamToString(is);
+                        }
+                        conn.disconnect();
+
+                        // 拿到的是网页源码 / JSON / SSE 时，统一抠出数字
+                        String value = normalizeValue(body);
+if (value == null && looksLikeHtml(body)) {
+                            // 页面是 JS 动态渲染，真正的数值在 /stream 里，再抓一次
+                            LogManager.log(ctx, LogManager.SUB_UPLOAD,
+                                    "返回的是网页源码，尝试从 " + deriveStreamUrl(urlStr) + " 读取实时值");
+                            String sv = fetchStreamValue(deriveStreamUrl(urlStr));
+                            if (sv != null) {
+                                value = sv;
+                            }
+                        }
+                        if (value != null) {
+                            body = value;
+                        } else if (body != null) {
+                            body = NO_VALUE_MARK;
+                        }
                     }
-                    conn.disconnect();
                 } catch (Exception e) {
                     LogManager.log(ctx, LogManager.SUB_UPLOAD,
                             "网页检测异常：" + e.getClass().getSimpleName() + " " + e.getMessage());
@@ -164,7 +193,7 @@ public final class WebMonitor {
             }
 
             final int fCode = httpCode;
-            final String fBody = body;
+final String fBody = body;
             final boolean fFileMode = fileMode;
 
             MAIN.post(() -> {
@@ -191,7 +220,7 @@ public final class WebMonitor {
             String[] lines = content.split("\n");
             for (String line : lines) {
                 String t = line.trim();
-                if (!t.isEmpty()) return t;
+if (!t.isEmpty()) return t;
             }
             return "";
         } catch (Exception e) {
@@ -205,6 +234,128 @@ public final class WebMonitor {
         }
     }
 
+    // ==================== 从响应里抠出真正的数值 ====================
+    private static boolean looksLikeHtml(String s) {
+        if (s == null) return false;
+        String t = s.trim().toLowerCase(Locale.getDefault());
+        return t.startsWith("<!doctype") || t.startsWith("<html")
+                || (t.startsWith("<") && t.contains("<body"));
+    }
+
+    /**
+     * 支持四种返回格式：
+     * 1) 纯数字 4
+     * 2) JSON {"value":4} / {"n":"4"}
+     * 3) SSE  data: 4
+     * 4) HTML 里的 <div id="n">4</div>
+     * 抠不出来返回 null
+     */
+    private static String normalizeValue(String raw) {
+        if (raw == null) return null;
+String t = raw.trim();
+        if (t.isEmpty()) return null;
+
+        // 1. 纯数字
+        if (isPureNumber(t)) return t;
+
+        // 2. JSON
+        if (t.startsWith("{")) {
+            try {
+                JSONObject o = new JSONObject(t);
+                String[] keys = {"value", "n", "num", "count", "status", "v"};
+                for (String k : keys) {
+                    if (o.has(k)) {
+                        String v = String.valueOf(o.opt(k)).trim();
+                        if (isPureNumber(v)) return v;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 3. SSE：data: 4
+        int di = t.indexOf("data:");
+        if (di >= 0) {
+            String rest = t.substring(di + 5);
+            int nl = rest.indexOf('\n');
+            if (nl >= 0) rest = rest.substring(0, nl);
+            rest = rest.trim();
+            if (isPureNumber(rest)) return rest;
+            // 形如 data: {"value":4}
+            if (rest.startsWith("{")) return normalizeValue(rest);
+}
+
+        // 4. HTML：<div id="n">4</div>
+        Matcher m = Pattern.compile("(?s)id\\s*=\\s*\"n\"[^>]*>\\s*([^<]{1,20})<").matcher(t);
+        if (m.find()) {
+            String v = m.group(1).trim();
+            if (isPureNumber(v)) return v;
+        }
+
+        return null;
+    }
+
+    /** 把 http://host:port/xxx 推导成 http://host:port/stream */
+    private static String deriveStreamUrl(String urlStr) {
+        if (urlStr == null) return null;
+        try {
+            URL u = new URL(urlStr);
+            String host = u.getHost();
+            int port = u.getPort();
+            String path = u.getPath();
+            if (path == null || path.isEmpty() || "/".equals(path)) {
+                return "http://" + host + ":" + port + "/stream";
+            }
+            if (path.toLowerCase(Locale.getDefault()).endsWith("/stream")) {
+                return urlStr;
+            }
+            int idx = path.lastIndexOf('/');
+            String base = idx >= 0 ? path.substring(0, idx) : path;
+return "http://" + host + ":" + port + base + "/stream";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 读取 SSE 流里的第一条 data，读到就立刻断开（不会一直挂着）
+     */
+    private static String fetchStreamValue(String streamUrl) {
+        if (streamUrl == null) return null;
+        HttpURLConnection conn = null;
+        BufferedReader br = null;
+        try {
+            URL u = new URL(streamUrl);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(4000);
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "text/event-stream");
+            conn.setUseCaches(false);
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) return null;
+
+            br = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            String line;
+            int lines = 0;
+while ((line = br.readLine()) != null && lines++ < 12) {
+                String v = normalizeValue(line);
+                if (v != null) return v;
+            }
+            return null;
+        } catch (Exception e) {
+            LogManager.log(appCtx, LogManager.SUB_UPLOAD,
+                    "读 /stream 失败：" + e.getClass().getSimpleName() + " " + e.getMessage());
+            return null;
+        } finally {
+            try {
+                if (br != null) br.close();
+            } catch (Exception ignored) {}
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     private static String readStreamToString(InputStream is) throws Exception {
         if (is == null) return null;
         BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
@@ -214,14 +365,21 @@ public final class WebMonitor {
             sb.append(line).append("\n");
         }
         br.close();
-        return sb.toString();
+return sb.toString();
     }
 
     // ==================== 结果处理（规则统一） ====================
     private static void handleResult(Context ctx, int httpCode, String body, boolean fileMode) {
         String src = fileMode ? "本地文件" : "网页";
         LogManager.log(ctx, LogManager.SUB_UPLOAD,
-                src + "检测结果 code=" + httpCode + " 内容=[" + body + "]");
+                src + "检测结果 code=" + httpCode + " 内容=[" + cutForLog(body) + "]");
+
+        if (NO_VALUE_MARK.equals(body)) {
+            setStatus("检测失败：网页里只有页面源码，没有数字（建议改填 /value 纯文本地址）");
+            LogManager.log(ctx, LogManager.SUB_UPLOAD,
+                    "返回的是HTML页面，没抠到数字，本轮不动作");
+            return;
+        }
 
         if (!fileMode && !(httpCode >= 200 && httpCode < 300)) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, "网页打不开，本轮不动作");
@@ -232,7 +390,7 @@ public final class WebMonitor {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "读取失败，本轮不动作");
             setStatus("检测失败：读不到" + src + "内容");
             return;
-        }
+}
 
         String flag = body.trim();
 
@@ -261,7 +419,7 @@ public final class WebMonitor {
                 @Override
                 public void run() {
                     if (!sleeping || appCtx == null) return;
-                    sleeping = false;
+sleeping = false;
                     sleepEndTs = 0L;
                     LogManager.log(appCtx, LogManager.SUB_UPLOAD, "休眠结束，自动恢复10秒检测");
                     scheduleNextCheck(0L);
@@ -285,7 +443,7 @@ public final class WebMonitor {
             }
             if (sec <= 0) {
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, "非法间隔" + flag + "，忽略");
-                setStatus("检测到非法间隔[" + flag + "]，不执行");
+setStatus("检测到非法间隔[" + flag + "]，不执行");
             } else if (sec == 1) {
                 stopSendLoop("返回1秒，按单次发送");
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1秒，按单次发送处理");
@@ -299,7 +457,7 @@ public final class WebMonitor {
         } else {
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
                     src + "返回[" + flag + "]不是0/1/数字，本轮不动作");
-            setStatus("检测到 [" + flag + "]，不是0/1/数字，不执行");
+            setStatus("检测到 [" + shortMsg(flag) + "]，不是0/1/数字，不执行");
         }
     }
 
@@ -310,7 +468,7 @@ public final class WebMonitor {
             DeviceUploader.send(ctx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
                 LogManager.log(ctx, LogManager.SUB_UPLOAD,
                         "单次上报结果 ok=" + ok + " msg=" + msg);
-                setStatus(classify(ok, msg));
+setStatus(classify(ok, msg));
             });
         } catch (Exception e) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, "单次采集异常：" + e.getMessage());
@@ -335,7 +493,7 @@ public final class WebMonitor {
                     DeviceUploader.send(appCtx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
                         LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                                 "循环上报(" + sendIntervalSec + "s) ok=" + ok + " msg=" + msg);
-                        setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
+setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
                     });
                 } catch (Exception e) {
                     LogManager.log(appCtx, LogManager.SUB_UPLOAD,
@@ -364,7 +522,7 @@ public final class WebMonitor {
     private static void cancelAll(String reason) {
         if (checkRunnable != null) {
             MAIN.removeCallbacks(checkRunnable);
-            checkRunnable = null;
+checkRunnable = null;
         }
         if (wakeRunnable != null) {
             MAIN.removeCallbacks(wakeRunnable);
@@ -397,8 +555,7 @@ public final class WebMonitor {
         if (ok) return "发送成功";
 
         String m = msg == null ? "" : msg;
-
-        // 飞书地址/配置问题
+// 飞书地址/配置问题
         if (m.contains("未配置") || m.contains("地址错误") || m.contains("密钥")) {
             return "飞书地址错误：" + m;
         }
@@ -424,11 +581,18 @@ public final class WebMonitor {
         if (i < 0) return "HTTP ?";
         int end = Math.min(m.length(), i + 9);
         return m.substring(i, end).trim();
-    }
+}
 
     private static String shortMsg(String m) {
         if (m.length() <= 40) return m;
         return m.substring(0, 40) + "…";
+    }
+
+    private static String cutForLog(String s) {
+        if (s == null) return "null";
+        String one = s.replace("\n", " ").replace("\r", " ").trim();
+        if (one.length() <= 200) return one;
+        return one.substring(0, 200) + "…(共" + s.length() + "字)";
     }
 
     /** 给界面用：最近一次状态文字 */
@@ -450,4 +614,5 @@ public final class WebMonitor {
         if (!sleeping) return 0;
         return Math.max(0, sleepEndTs - System.currentTimeMillis());
     }
-}
+    }
+
