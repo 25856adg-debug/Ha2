@@ -34,7 +34,13 @@ public final class DeviceUploader {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     public interface Callback {
-        void onResult(boolean ok, String msg);
+        // 老代码 TaskReceiver 里重写的是 onComplete，必须保留这个名字
+        void onComplete(boolean success, String message);
+
+        // 兼容我这边新代码用 onResult 的写法
+        default void onResult(boolean ok, String msg) {
+            onComplete(ok, msg);
+        }
     }
 
     private DeviceUploader() {}
@@ -44,7 +50,7 @@ public final class DeviceUploader {
         String hook = ConfigManager.getFeishuWebhook(context);
         if (hook == null || hook.trim().isEmpty()) {
             if (callback != null) {
-                MAIN.post(() -> callback.onResult(false, "飞书Webhook未配置"));
+                MAIN.post(() -> callback.onComplete(false, "飞书Webhook未配置"));
             }
             return;
         }
@@ -220,12 +226,10 @@ public final class DeviceUploader {
 
     private static void notifyCallback(Callback cb, boolean ok, String msg) {
         if (cb == null) return;
-        MAIN.post(() -> cb.onResult(ok, msg));
+        MAIN.post(() -> cb.onComplete(ok, msg));
     }
 
     public static boolean isRunning() {
         return RUNNING.get();
     }
 }
-
-
