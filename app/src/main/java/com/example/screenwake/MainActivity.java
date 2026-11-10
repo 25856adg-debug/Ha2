@@ -40,15 +40,16 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private static final int REQ_PERM_STORAGE = 1001;
     private static final int REQ_PERM_CAMERA = 1002;
 
-    // tail日志弹窗自动刷新
+    // ========= tail日志弹窗自动刷新（只定义一次！） =========
     private final Handler tailHandler = new Handler(Looper.getMainLooper());
     private AlertDialog tailLogDialog;
     private TextView tailLogText;
+    private String tailCurrentSub = LogManager.SUB_APP; // 默认查看app日志
     private final Runnable tailRunnable = new Runnable() {
         @Override
         public void run() {
             if (tailLogDialog != null && tailLogText != null) {
-                String txt = LogManager.readTailDebug(MainActivity.this, LogManager.SUB_APP, 20);
+                String txt = LogManager.readTailDebug(MainActivity.this, tailCurrentSub, 20);
                 tailLogText.setText(txt);
             }
             if (tailLogDialog != null && tailLogDialog.isShowing()) {
@@ -159,26 +160,26 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         sb.append("=== 目录检测 ===\n");
         sb.append("getExternalFilesDir = ").append(baseDir == null ? "【NULL，系统返回空！】" : baseDir.getAbsolutePath()).append("\n");
 
-        if(baseDir == null){
+        if (baseDir == null) {
             sb.append("❌ 致命：系统返回空目录，无法进行任何文件读写！ROM限制\n");
-        }else{
+        } else {
             File testFile = new File(baseDir, "write_test.txt");
             sb.append("测试文件路径：").append(testFile.getAbsolutePath()).append("\n");
-            try(OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(testFile))){
-                w.write("test "+System.currentTimeMillis());
+            try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(testFile))) {
+                w.write("test " + System.currentTimeMillis());
                 w.flush();
                 sb.append("✅ 文件写入成功\n");
-                if(testFile.exists()){
+                if (testFile.exists()) {
                     sb.append("✅ 文件exists=true\n");
                 }
-            }catch (Exception e){
+            } catch (Exception e) {
                 sb.append("❌ 写入异常：").append(e.getClass().getSimpleName()).append(" | ").append(e.getMessage()).append("\n");
             }
         }
         new AlertDialog.Builder(this)
                 .setTitle("私有目录读写测试")
                 .setMessage(sb.toString())
-                .setPositiveButton("确定",null)
+                .setPositiveButton("确定", null)
                 .show();
     }
 
@@ -214,12 +215,47 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 .show();
     }
 
-    // ========= tail‑f 实时查看日志弹窗，最多20行 =========
+    // ========= tail‑f 实时查看日志弹窗（带分类切换） =========
     private void showTailLogDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        // 切换日志按钮行
+        LinearLayout barLayout = new LinearLayout(this);
+        barLayout.setOrientation(LinearLayout.HORIZONTAL);
+        barLayout.setGravity(Gravity.CENTER);
+        barLayout.setPadding(0, 0, 0, dp(12));
+
+        TextView btnApp = new TextView(this);
+        btnApp.setText("App日志");
+        btnApp.setPadding(dp(8), dp(6), dp(8), dp(6));
+        btnApp.setTextSize(13);
+        btnApp.setOnClickListener(v -> {
+            tailCurrentSub = LogManager.SUB_APP;
+        });
+
+        TextView btnUpload = new TextView(this);
+        btnUpload.setText("上报Upload日志");
+        btnUpload.setPadding(dp(8), dp(6), dp(8), dp(6));
+        btnUpload.setTextSize(13);
+        btnUpload.setOnClickListener(v -> {
+            tailCurrentSub = LogManager.SUB_UPLOAD;
+        });
+
+        TextView btnCmd = new TextView(this);
+        btnCmd.setText("指令Command日志");
+        btnCmd.setPadding(dp(8), dp(6), dp(8), dp(6));
+        btnCmd.setTextSize(13);
+        btnCmd.setOnClickListener(v -> {
+            tailCurrentSub = LogManager.SUB_COMMAND;
+        });
+
+        barLayout.addView(btnApp);
+        barLayout.addView(btnUpload);
+        barLayout.addView(btnCmd);
+        layout.addView(barLayout);
 
         tailLogText = new TextView(this);
         tailLogText.setTextSize(11);
@@ -230,7 +266,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         sv.addView(tailLogText);
         layout.addView(sv);
 
-        builder.setTitle("实时日志 tail‑20行（带错误诊断）");
+        builder.setTitle("实时日志 tail‑20行｜点击切换日志分类");
         builder.setView(layout);
         builder.setNegativeButton("关闭", (dialog, which) -> {
             tailHandler.removeCallbacks(tailRunnable);
@@ -529,12 +565,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         EditText server = new EditText(this);
         server.setHint("服务器地址，例如 http://1.2.3.4:3357");
         server.setSingleLine(true);
-        server.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
+        server.setInputType(InputType.TEXT_VARIATION_URI);
         server.setText(ConfigManager.getServerUrl(this));
         EditText token = new EditText(this);
         token.setHint("设备Token");
         token.setSingleLine(true);
-        token.setInputType(InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        token.setInputType(InputType.TEXT_VARIATION_PASSWORD);
         token.setText(ConfigManager.getToken(this));
         layout.addView(server);
         layout.addView(token);
@@ -595,68 +631,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             showError(e);
         }
     }
-    // ========= tail‑f 实时查看日志弹窗，最多20行 =========
-    private void showTailLogDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
 
-        // 切换日志按钮行
-        LinearLayout barLayout = new LinearLayout(this);
-        barLayout.setOrientation(LinearLayout.HORIZONTAL);
-        barLayout.setGravity(Gravity.CENTER);
-        barLayout.setPadding(0,0,0,dp(12));
-
-        TextView btnApp = new TextView(this);
-        btnApp.setText("App日志");
-        btnApp.setPadding(dp(8),dp(6),dp(8),dp(6));
-        btnApp.setTextSize(13);
-        btnApp.setOnClickListener(v->{
-            tailCurrentSub = LogManager.SUB_APP;
-        });
-
-        TextView btnUpload = new TextView(this);
-        btnUpload.setText("上报Upload日志");
-        btnUpload.setPadding(dp(8),dp(6),dp(8),dp(6));
-        btnUpload.setTextSize(13);
-        btnUpload.setOnClickListener(v->{
-            tailCurrentSub = LogManager.SUB_UPLOAD;
-        });
-
-        TextView btnCmd = new TextView(this);
-        btnCmd.setText("指令Command日志");
-        btnCmd.setPadding(dp(8),dp(6),dp(8),dp(6));
-        btnCmd.setTextSize(13);
-        btnCmd.setOnClickListener(v->{
-            tailCurrentSub = LogManager.SUB_COMMAND;
-        });
-
-        barLayout.addView(btnApp);
-        barLayout.addView(btnUpload);
-        barLayout.addView(btnCmd);
-        layout.addView(barLayout);
-
-        tailLogText = new TextView(this);
-        tailLogText.setTextSize(11);
-        tailLogText.setMaxHeight(dp(400));
-        tailLogText.setMovementMethod(ScrollingMovementMethod.getInstance());
-
-        ScrollView sv = new ScrollView(this);
-        sv.addView(tailLogText);
-        layout.addView(sv);
-
-        builder.setTitle("实时日志 tail‑20行｜点击切换日志分类");
-        builder.setView(layout);
-        builder.setNegativeButton("关闭", (dialog, which) -> {
-            tailHandler.removeCallbacks(tailRunnable);
-            tailLogDialog = null;
-            tailLogText = null;
-        });
-        tailLogDialog = builder.create();
-        tailLogDialog.show();
-        tailHandler.post(tailRunnable);
-    }
     private void toast(String message) {
         Toast.makeText(
                 this,
@@ -672,24 +647,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 Toast.LENGTH_LONG
         ).show();
     }
-    }
-    // tail日志弹窗自动刷新
-    private final Handler tailHandler = new Handler(Looper.getMainLooper());
-    private AlertDialog tailLogDialog;
-    private TextView tailLogText;
-    private String tailCurrentSub = LogManager.SUB_APP; // 默认查看app日志
 
-    private final Runnable tailRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (tailLogDialog != null && tailLogText != null) {
-                String txt = LogManager.readTailDebug(MainActivity.this, tailCurrentSub, 20);
-                tailLogText.setText(txt);
-            }
-            if (tailLogDialog != null && tailLogDialog.isShowing()) {
-                tailHandler.postDelayed(this, 1200);
-            }
-        }
-    };
-    
+}
+
+
 
