@@ -24,11 +24,9 @@ public final class LogManager {
     public static final String SUB_UPLOAD = "upload/";
     public static final String SUB_COMMAND = "command/";
     private static final String WHITELIST_SUB = "whitelist/";
-
     private static final String WHITELIST_FILENAME = "action_whitelist.txt";
     private static final String SERVER_ALLOW_FILENAME = "server_allow.txt";
     private static final String SERVER_TRUST_FILENAME = "server_trust.txt";
-
     private static final int MAX_SINGLE_FILE_LINES = 800;
 
     private LogManager() {}
@@ -101,7 +99,6 @@ public final class LogManager {
             ).format(new Date(now));
             String logLine = now + " | " + time + " | " + message.replace("\n", " ");
             lines.add(logLine);
-
             while (lines.size() > MAX_SINGLE_FILE_LINES) {
                 lines.remove(0);
             }
@@ -130,6 +127,27 @@ public final class LogManager {
 
     public static synchronized int getLineCount(Context context) {
         return getLineCount(context, SUB_APP);
+    }
+
+    /**
+     * 读取日志末尾N行，tail实现
+     * @param context ctx
+     * @param subDir 子目录 SUB_APP / SUB_UPLOAD / SUB_COMMAND
+     * @param maxLines 最多行数
+     * @return 拼接文本
+     */
+    public static synchronized String readTail(Context context, String subDir, int maxLines) {
+        List<String> all = readLines(context, subDir);
+        int size = all.size();
+        int start = Math.max(0, size - maxLines);
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < size; i++) {
+            sb.append(all.get(i)).append("\n");
+        }
+        if (sb.length() == 0) {
+            return "暂无日志";
+        }
+        return sb.toString();
     }
 
     // ========= action_whitelist.txt 读取指令白名单 =========
@@ -217,5 +235,3 @@ public final class LogManager {
         }
     }
 }
-
-
