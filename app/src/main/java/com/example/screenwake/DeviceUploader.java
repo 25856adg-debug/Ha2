@@ -32,8 +32,7 @@ public final class DeviceUploader {
     private static final int MAX_ATTEMPTS = 3;
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-
-    public interface Callback {
+public interface Callback {
         // 老代码 TaskReceiver 里重写的是 onComplete，必须保留这个名字
         void onComplete(boolean success, String message);
 
@@ -60,8 +59,7 @@ public final class DeviceUploader {
     // ==================== 主入口：飞书Webhook + AES加密 + 硬件JSON ====================
     public static void send(Context context, String webhookUrl, String aesKey16,
                             JSONObject hardwareInfo, Callback callback) {
-
-        final Context app = context.getApplicationContext();
+final Context app = context.getApplicationContext();
 
         if (!RUNNING.compareAndSet(false, true)) {
             notifyCallback(callback, false, "已有上报任务正在执行");
@@ -87,36 +85,40 @@ public final class DeviceUploader {
                 String rawJson = hardwareInfo.toString();
                 String[] enc = encryptAesCbc(rawJson, aesKey16);
                 String cipherB64 = enc[0];
-                String ivB64 = enc[1];
+String ivB64 = enc[1];
                 String deviceId = ConfigManager.getDeviceId(app);
 
                 LogManager.log(app, LogManager.SUB_UPLOAD,
                         "加密完成；deviceId=" + deviceId + " iv=" + ivB64
                                 + " 明文长度=" + rawJson.length());
 
-                // 2. 组装飞书卡片
-                JSONObject cardJson = new JSONObject();
-
-                JSONObject content = new JSONObject();
-                content.put("tag", "markdown");
-                content.put("content",
-                        "📱 设备硬件密文上报\n"
-                                + "device_id：`" + deviceId + "`\n"
-                                + "iv(base64)：`" + ivB64 + "`\n"
-                                + "cipher(base64)：\n```\n" + cipherB64 + "\n```\n"
-                                + "运行 python jm.py 解密，输出：已开启.txt");
-
-                JSONObject elements = new JSONObject();
-                elements.put("tag", "div");
-                elements.put("text", content);
-
-                JSONObject body = new JSONObject();
-                body.put("elements", new JSONObject[]{elements});
-
+                // 2. 组装飞书卡片（必须用 v1 结构：elements 在 card 顶层，不能套 body）
                 JSONObject card = new JSONObject();
                 card.put("config", new JSONObject().put("wide_screen_mode", true));
-                card.put("body", body);
 
+                JSONObject header = new JSONObject();
+                JSONObject title = new JSONObject();
+                title.put("tag", "plain_text");
+                title.put("content", "设备硬件密文上报");
+                header.put("title", title);
+                header.put("template", "blue");
+                card.put("header", header);
+
+                JSONObject textObj = new JSONObject();
+                textObj.put("tag", "lark_md");
+                textObj.put("content",
+                        "**device_id**：" + deviceId + "\n"
++ "**iv（Base64）**：" + ivB64 + "\n"
+                                + "**cipher（Base64）**：\n" + cipherB64 + "\n"
+                                + "把 iv 和 cipher 粘进 jm.py 运行，生成 已开启.txt");
+
+                JSONObject elem1 = new JSONObject();
+                elem1.put("tag", "div");
+                elem1.put("text", textObj);
+
+                card.put("elements", new JSONObject[]{elem1});
+
+                JSONObject cardJson = new JSONObject();
                 cardJson.put("msg_type", "interactive");
                 cardJson.put("card", card);
 
@@ -129,7 +131,7 @@ public final class DeviceUploader {
                     try {
                         URL url = new URL(webhookUrl.trim());
                         connection = (HttpURLConnection) url.openConnection();
-                        connection.setRequestMethod("POST");
+connection.setRequestMethod("POST");
                         connection.setConnectTimeout(10000);
                         connection.setReadTimeout(15000);
                         connection.setDoOutput(true);
@@ -148,9 +150,9 @@ public final class DeviceUploader {
                         String resp = readStream(is);
 
                         LogManager.log(app, LogManager.SUB_UPLOAD,
-                                "飞书返回 HTTP " + code + " 内容=" + resp);
+"飞书返回 HTTP " + code + " 内容=" + resp);
 
-                        if (code == 200) {
+                        if (code == 200 && isFeishuOk(resp)) {
                             success = true;
                             finalMessage = "上报成功";
                             break;
@@ -170,7 +172,7 @@ public final class DeviceUploader {
                         try {
                             Thread.sleep(attempt * 2000L);
                         } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
+Thread.currentThread().interrupt();
                             break;
                         }
                     }
@@ -196,7 +198,7 @@ public final class DeviceUploader {
     private static String[] encryptAesCbc(String plainText, String key16) throws Exception {
         byte[] keyBytes = key16.getBytes(StandardCharsets.UTF_8);
         byte[] ivBytes = new byte[16];
-        new SecureRandom().nextBytes(ivBytes);
+new SecureRandom().nextBytes(ivBytes);
 
         SecretKeySpec keySpec = new SecretKeySpec(keyBytes, "AES");
         IvParameterSpec ivSpec = new IvParameterSpec(ivBytes);
@@ -208,6 +210,22 @@ public final class DeviceUploader {
         String cipherB64 = Base64.encodeToString(encrypted, Base64.NO_WRAP);
         String ivB64 = Base64.encodeToString(ivBytes, Base64.NO_WRAP);
         return new String[]{cipherB64, ivB64};
+    }
+
+    // ==================== 判断飞书是否真的收下了 ====================
+    // 飞书 HTTP 200 也可能带错误码，例如 {"code":11246,"msg":"parse card json err"}
+    private static boolean isFeishuOk(String resp) {
+        if (resp == null || resp.trim().isEmpty()) return false;
+        try {
+            JSONObject o = new JSONObject(resp);
+            if (o.has("code")) {
+                return o.optInt("code", -1) == 0;
+            }
+            if (o.has("StatusCode")) {
+                return o.optInt("StatusCode", -1) == 0;
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 
     // ==================== 读响应 ====================
@@ -233,3 +251,4 @@ public final class DeviceUploader {
         return RUNNING.get();
     }
 }
+
