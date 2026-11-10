@@ -22,6 +22,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -46,7 +48,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         @Override
         public void run() {
             if (tailLogDialog != null && tailLogText != null) {
-                String txt = LogManager.readTail(MainActivity.this, LogManager.SUB_APP, 20);
+                String txt = LogManager.readTailDebug(MainActivity.this, LogManager.SUB_APP, 20);
                 tailLogText.setText(txt);
             }
             if (tailLogDialog != null && tailLogDialog.isShowing()) {
@@ -150,6 +152,36 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         }
     }
 
+    // ========= 测试私有目录读写 =========
+    private void testPrivateWrite() {
+        File baseDir = getExternalFilesDir(null);
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== 目录检测 ===\n");
+        sb.append("getExternalFilesDir = ").append(baseDir == null ? "【NULL，系统返回空！】" : baseDir.getAbsolutePath()).append("\n");
+
+        if(baseDir == null){
+            sb.append("❌ 致命：系统返回空目录，无法进行任何文件读写！ROM限制\n");
+        }else{
+            File testFile = new File(baseDir, "write_test.txt");
+            sb.append("测试文件路径：").append(testFile.getAbsolutePath()).append("\n");
+            try(OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(testFile))){
+                w.write("test "+System.currentTimeMillis());
+                w.flush();
+                sb.append("✅ 文件写入成功\n");
+                if(testFile.exists()){
+                    sb.append("✅ 文件exists=true\n");
+                }
+            }catch (Exception e){
+                sb.append("❌ 写入异常：").append(e.getClass().getSimpleName()).append(" | ").append(e.getMessage()).append("\n");
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("私有目录读写测试")
+                .setMessage(sb.toString())
+                .setPositiveButton("确定",null)
+                .show();
+    }
+
     // ========= 服务器绑定弹窗回调 =========
     @Override
     public void needShowBindDialog(String bindId, boolean isChanged) {
@@ -198,7 +230,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         sv.addView(tailLogText);
         layout.addView(sv);
 
-        builder.setTitle("实时日志 tail‑20行");
+        builder.setTitle("实时日志 tail‑20行（带错误诊断）");
         builder.setView(layout);
         builder.setNegativeButton("关闭", (dialog, which) -> {
             tailHandler.removeCallbacks(tailRunnable);
@@ -290,6 +322,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         );
         addButton(root, "查看日志（打开文件管理器）", this::openLogFolder);
         addButton(root, "实时查看日志(tail‑20行)", this::showTailLogDialog);
+        addButton(root, "测试私有目录读写", this::testPrivateWrite);
 
         // ======================【服务器信任管理按钮】======================
         addSection(root, "服务器信任管理");
@@ -578,4 +611,8 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 Toast.LENGTH_LONG
         ).show();
     }
-}
+    }
+
+
+
+
