@@ -27,7 +27,7 @@ public final class DeviceUploader {
     private static final String TAG = "DeviceUploader";
 
     // 写死AES密钥16位，必须和 jm.py 一致
-    public static final String DEFAULT_AES_KEY = "MyKey1234567890";
+    public static final String DEFAULT_AES_KEY = "MyKey12345678901";
 
     private static final int MAX_ATTEMPTS = 3;
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
@@ -251,4 +251,6 @@ new SecureRandom().nextBytes(ivBytes);
         return RUNNING.get();
     }
 }
+
+
 
