@@ -217,7 +217,126 @@ public final class LogManager {
         }
     }
 }
+        <?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 网络 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
+    <!-- Wi‑Fi -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
+    <!-- 蓝牙 -->
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+
+    <!-- 开机启动 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- 亮屏 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- 前台服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+
+    <!-- 通知 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- 其他权限 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
+    <!-- 存储相关 -->
+    <uses‑permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses‑permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses‑permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+
+    <!-- 相机权限 -->
+    <uses‑permission android:name="android.permission.CAMERA"/>
+
+    <application
+        android:allowBackup="false"
+        android:label="接收器"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:usesCleartextTraffic="true">
+
+        <!-- 主界面 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+        </activity>
+
+        <!-- 浏览器 -->
+        <activity
+            android:name=".BrowserActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"/>
+
+        <!-- 设置 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"/>
+
+        <!-- 亮屏图案 -->
+        <activity
+            android:name=".PatternActivity"
+            android:exported="false"/>
+
+        <!-- 开机接收器 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+
+        </receiver>
+
+        <!-- 定时任务接收器 -->
+        <receiver
+            android:name=".TaskReceiver"
+            android:enabled="true"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="com.example.screenwake.ACTION_TIMER"/>
+            </intent-filter>
+
+        </receiver>
+
+        <!-- 原有亮屏服务 -->
+        <service
+            android:name=".ScreenWakeService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Brief post‑boot screen wake attempt and visible five‑minute display"/>
+
+        </service>
+
+        <!-- 新增设备任务服务 -->
+        <service
+            android:name=".CycleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
+
+    </application>
+</manifest>
+            
 
 
