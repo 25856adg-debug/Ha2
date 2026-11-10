@@ -51,6 +51,8 @@ private static final String NO_VALUE_MARK = "@@NOVALUE@@";
     // 给界面直接显示的状态文字
     private static volatile String lastStatus = "未启动";
     private static volatile long lastStatusTs = 0L;
+    // 上次网页返回内容的开头（排查用）
+    private static volatile String lastSniff = "";
 
     private static final AtomicBoolean checking = new AtomicBoolean(false);
     private static volatile boolean sleeping = false;
@@ -61,8 +63,8 @@ private static final String NO_VALUE_MARK = "@@NOVALUE@@";
 
     // ==================== 启动 ====================
     public static synchronized void start(Context ctx, String url, String hook) {
-        appCtx = ctx.getApplicationContext();
-monitorUrl = url == null ? "" : url.trim();
+appCtx = ctx.getApplicationContext();
+        monitorUrl = url == null ? "" : url.trim();
         feishuHook = hook == null ? "" : hook.trim();
 
         cancelAll("重启检测任务");
@@ -92,9 +94,8 @@ monitorUrl = url == null ? "" : url.trim();
         }
         setStatus("已停止");
     }
-
-    // ==================== 清除休眠立即恢复 ====================
-public static synchronized void clearSleepAndResume() {
+// ==================== 清除休眠立即恢复 ====================
+    public static synchronized void clearSleepAndResume() {
         if (appCtx == null) return;
         if (wakeRunnable != null) {
             MAIN.removeCallbacks(wakeRunnable);
@@ -123,8 +124,8 @@ public static synchronized void clearSleepAndResume() {
     }
 
     private static void doCheckOnce() {
-        if (!checking.compareAndSet(false, true)) {
-scheduleNextCheck(CHECK_INTERVAL_MS);
+if (!checking.compareAndSet(false, true)) {
+            scheduleNextCheck(CHECK_INTERVAL_MS);
             return;
         }
 
@@ -151,8 +152,8 @@ scheduleNextCheck(CHECK_INTERVAL_MS);
                 try {
                     if (urlStr != null && urlStr.toLowerCase(Locale.getDefault()).endsWith("/stream")) {
                         // 地址本身就是 SSE 流，直接读首条 data
-                        body = fetchStreamValue(urlStr);
-httpCode = body != null ? 200 : -1;
+body = fetchStreamValue(urlStr);
+                        httpCode = body != null ? 200 : -1;
                     } else {
                         URL urlObj = new URL(urlStr);
                         HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
@@ -170,12 +171,23 @@ httpCode = body != null ? 200 : -1;
                         conn.disconnect();
 
                         // 拿到的是网页源码 / JSON / SSE 时，统一抠出数字
-                        String value = normalizeValue(body);
-if (value == null && looksLikeHtml(body)) {
-                            // 页面是 JS 动态渲染，真正的数值在 /stream 里，再抓一次
-                            LogManager.log(ctx, LogManager.SUB_UPLOAD,
-                                    "返回的是网页源码，尝试从 " + deriveStreamUrl(urlStr) + " 读取实时值");
-                            String sv = fetchStreamValue(deriveStreamUrl(urlStr));
+String value = normalizeValue(body);
+                        if (value == null && looksLikeHtml(body)) {
+                            // 页面是 JS 动态渲染：先顺着它自己写的 EventSource 路径抓，再退回猜 /stream
+                            String esPath = extractDataPath(body);
+                            String sv = null;
+                            if (esPath != null) {
+                                String esUrl = buildAbsolute(urlStr, esPath);
+                                LogManager.log(ctx, LogManager.SUB_UPLOAD,
+                                        "页面是动态渲染，按 EventSource 路径读：" + esUrl);
+                                sv = fetchStreamValue(esUrl);
+                            }
+                            if (sv == null) {
+                                String fallback = deriveStreamUrl(urlStr);
+                                LogManager.log(ctx, LogManager.SUB_UPLOAD,
+                                        "再试默认路径：" + fallback);
+                                sv = fetchStreamValue(fallback);
+}
                             if (sv != null) {
                                 value = sv;
                             }
@@ -183,6 +195,8 @@ if (value == null && looksLikeHtml(body)) {
                         if (value != null) {
                             body = value;
                         } else if (body != null) {
+                            // 记住返回内容开头，方便界面直接看出服务器到底给了啥
+                            lastSniff = cutForLog(body, 70);
                             body = NO_VALUE_MARK;
                         }
                     }
@@ -193,13 +207,13 @@ if (value == null && looksLikeHtml(body)) {
             }
 
             final int fCode = httpCode;
-final String fBody = body;
+            final String fBody = body;
             final boolean fFileMode = fileMode;
 
             MAIN.post(() -> {
                 checking.set(false);
                 handleResult(ctx, fCode, fBody, fFileMode);
-                if (!sleeping && started) scheduleNextCheck(CHECK_INTERVAL_MS);
+if (!sleeping && started) scheduleNextCheck(CHECK_INTERVAL_MS);
             });
         }).start();
     }
@@ -220,13 +234,13 @@ final String fBody = body;
             String[] lines = content.split("\n");
             for (String line : lines) {
                 String t = line.trim();
-if (!t.isEmpty()) return t;
+                if (!t.isEmpty()) return t;
             }
             return "";
         } catch (Exception e) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
                     "读本地文件异常：" + e.getClass().getSimpleName() + " " + e.getMessage());
-            return null;
+return null;
         } finally {
             try {
                 if (is != null) is.close();
@@ -252,7 +266,7 @@ if (!t.isEmpty()) return t;
      */
     private static String normalizeValue(String raw) {
         if (raw == null) return null;
-String t = raw.trim();
+        String t = raw.trim();
         if (t.isEmpty()) return null;
 
         // 1. 纯数字
@@ -262,7 +276,7 @@ String t = raw.trim();
         if (t.startsWith("{")) {
             try {
                 JSONObject o = new JSONObject(t);
-                String[] keys = {"value", "n", "num", "count", "status", "v"};
+String[] keys = {"value", "n", "num", "count", "status", "v"};
                 for (String k : keys) {
                     if (o.has(k)) {
                         String v = String.valueOf(o.opt(k)).trim();
@@ -282,20 +296,69 @@ String t = raw.trim();
             if (isPureNumber(rest)) return rest;
             // 形如 data: {"value":4}
             if (rest.startsWith("{")) return normalizeValue(rest);
-}
+        }
 
         // 4. HTML：<div id="n">4</div>
         Matcher m = Pattern.compile("(?s)id\\s*=\\s*\"n\"[^>]*>\\s*([^<]{1,20})<").matcher(t);
         if (m.find()) {
             String v = m.group(1).trim();
             if (isPureNumber(v)) return v;
+}
+
+        // 5. 万能兜底：把 HTML 标签全剥掉，如果剩下的可见文本整体就是个数字，就用它
+        if (looksLikeHtml(t)) {
+            String text = t
+                    .replaceAll("(?s)<script[^>]*>.*?</script>", " ")
+                    .replaceAll("(?s)<style[^>]*>.*?</style>", " ")
+                    .replaceAll("(?s)<!--.*?-->", " ")
+                    .replaceAll("<[^>]+>", " ")
+                    .trim();
+            if (isPureNumber(text)) return text;
         }
 
         return null;
     }
 
+    /** 从页面源码里找真正的数据源路径：EventSource('/x') / fetch('/x') / open('GET','/x') */
+    private static String extractDataPath(String html) {
+        if (html == null) return null;
+
+        Matcher m = Pattern.compile("EventSource\\s*\\(\\s*[\"']([^\"']+)[\"']").matcher(html);
+        if (m.find()) return m.group(1);
+
+        m = Pattern.compile("fetch\\s*\\(\\s*[\"']([^\"']+)[\"']").matcher(html);
+        if (m.find()) return m.group(1);
+
+        m = Pattern.compile(".open\\s*\\(\\s*[\"']GET[\"']\\s*,\\s*[\"']([^\"']+)[\"']").matcher(html);
+if (m.find()) return m.group(1);
+
+        return null;
+    }
+
+    /** 相对路径拼成绝对地址 */
+    private static String buildAbsolute(String baseUrl, String path) {
+        if (path == null) return null;
+        String p = path.trim();
+        if (p.startsWith("http://") || p.startsWith("https://")) return p;
+        try {
+            URL u = new URL(baseUrl);
+            String portPart = u.getPort() > 0 ? (":" + u.getPort()) : "";
+            String scheme = u.getProtocol();
+            if (p.startsWith("/")) {
+                return scheme + "://" + u.getHost() + portPart + p;
+            }
+            String basePath = u.getPath();
+            if (basePath == null || "/".equals(basePath)) basePath = "";
+            int idx = basePath.lastIndexOf('/');
+            String dir = idx >= 0 ? basePath.substring(0, idx + 1) : "/";
+            return scheme + "://" + u.getHost() + portPart + dir + p;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 把 http://host:port/xxx 推导成 http://host:port/stream */
-    private static String deriveStreamUrl(String urlStr) {
+private static String deriveStreamUrl(String urlStr) {
         if (urlStr == null) return null;
         try {
             URL u = new URL(urlStr);
@@ -310,7 +373,7 @@ String t = raw.trim();
             }
             int idx = path.lastIndexOf('/');
             String base = idx >= 0 ? path.substring(0, idx) : path;
-return "http://" + host + ":" + port + base + "/stream";
+            return "http://" + host + ":" + port + base + "/stream";
         } catch (Exception e) {
             return null;
         }
@@ -323,7 +386,7 @@ return "http://" + host + ":" + port + base + "/stream";
         if (streamUrl == null) return null;
         HttpURLConnection conn = null;
         BufferedReader br = null;
-        try {
+try {
             URL u = new URL(streamUrl);
             conn = (HttpURLConnection) u.openConnection();
             conn.setConnectTimeout(4000);
@@ -339,7 +402,7 @@ return "http://" + host + ":" + port + base + "/stream";
                     new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             String line;
             int lines = 0;
-while ((line = br.readLine()) != null && lines++ < 12) {
+            while ((line = br.readLine()) != null && lines++ < 12) {
                 String v = normalizeValue(line);
                 if (v != null) return v;
             }
@@ -347,7 +410,7 @@ while ((line = br.readLine()) != null && lines++ < 12) {
         } catch (Exception e) {
             LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                     "读 /stream 失败：" + e.getClass().getSimpleName() + " " + e.getMessage());
-            return null;
+return null;
         } finally {
             try {
                 if (br != null) br.close();
@@ -365,7 +428,7 @@ while ((line = br.readLine()) != null && lines++ < 12) {
             sb.append(line).append("\n");
         }
         br.close();
-return sb.toString();
+        return sb.toString();
     }
 
     // ==================== 结果处理（规则统一） ====================
@@ -375,7 +438,7 @@ return sb.toString();
                 src + "检测结果 code=" + httpCode + " 内容=[" + cutForLog(body) + "]");
 
         if (NO_VALUE_MARK.equals(body)) {
-            setStatus("检测失败：网页里只有页面源码，没有数字（建议改填 /value 纯文本地址）");
+setStatus("检测失败：返回的不是数字 [HTTP " + httpCode + "] " + lastSniff);
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
                     "返回的是HTML页面，没抠到数字，本轮不动作");
             return;
@@ -390,7 +453,7 @@ return sb.toString();
             LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "读取失败，本轮不动作");
             setStatus("检测失败：读不到" + src + "内容");
             return;
-}
+        }
 
         String flag = body.trim();
 
@@ -404,7 +467,7 @@ return sb.toString();
 
             int minutes = ConfigManager.getSleepMinutes(ctx);
             if (minutes < MIN_SLEEP_MINUTES) minutes = MIN_SLEEP_MINUTES;
-            if (minutes > MAX_SLEEP_MINUTES) minutes = MAX_SLEEP_MINUTES;
+if (minutes > MAX_SLEEP_MINUTES) minutes = MAX_SLEEP_MINUTES;
             long sleepMs = minutes * 60_000L;
 
             sleeping = true;
@@ -419,7 +482,7 @@ return sb.toString();
                 @Override
                 public void run() {
                     if (!sleeping || appCtx == null) return;
-sleeping = false;
+                    sleeping = false;
                     sleepEndTs = 0L;
                     LogManager.log(appCtx, LogManager.SUB_UPLOAD, "休眠结束，自动恢复10秒检测");
                     scheduleNextCheck(0L);
@@ -430,7 +493,7 @@ sleeping = false;
         } else if ("1".equals(flag)) {
             // ===== 1：立即发一次 =====
             stopSendLoop("返回1，切换单次发送");
-            LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1，立即发送一次硬件信息");
+LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1，立即发送一次硬件信息");
             setStatus("已检测到 1，正在发送…");
             sendOnce(ctx);
 
@@ -443,7 +506,7 @@ sleeping = false;
             }
             if (sec <= 0) {
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, "非法间隔" + flag + "，忽略");
-setStatus("检测到非法间隔[" + flag + "]，不执行");
+                setStatus("检测到非法间隔[" + flag + "]，不执行");
             } else if (sec == 1) {
                 stopSendLoop("返回1秒，按单次发送");
                 LogManager.log(ctx, LogManager.SUB_UPLOAD, src + "返回1秒，按单次发送处理");
@@ -452,7 +515,7 @@ setStatus("检测到非法间隔[" + flag + "]，不执行");
             } else {
                 setStatus("已检测到 " + sec + "，每" + sec + "秒发送一次");
                 startSendLoop(ctx, sec);
-            }
+}
 
         } else {
             LogManager.log(ctx, LogManager.SUB_UPLOAD,
@@ -468,7 +531,7 @@ setStatus("检测到非法间隔[" + flag + "]，不执行");
             DeviceUploader.send(ctx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
                 LogManager.log(ctx, LogManager.SUB_UPLOAD,
                         "单次上报结果 ok=" + ok + " msg=" + msg);
-setStatus(classify(ok, msg));
+                setStatus(classify(ok, msg));
             });
         } catch (Exception e) {
             LogManager.log(ctx, LogManager.SUB_UPLOAD, "单次采集异常：" + e.getMessage());
@@ -479,7 +542,7 @@ setStatus(classify(ok, msg));
     // ==================== n秒发送循环 ====================
     private static void startSendLoop(Context ctx, int intervalSec) {
         stopSendLoop("切换发送间隔");
-        sendIntervalSec = intervalSec;
+sendIntervalSec = intervalSec;
 
         LogManager.log(ctx, LogManager.SUB_UPLOAD,
                 "启动秒级发送循环，间隔 " + intervalSec + " 秒（检测仍每10秒一次）");
@@ -493,14 +556,14 @@ setStatus(classify(ok, msg));
                     DeviceUploader.send(appCtx, feishuHook, FIX_AES_KEY, hardware, (ok, msg) -> {
                         LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                                 "循环上报(" + sendIntervalSec + "s) ok=" + ok + " msg=" + msg);
-setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
+                        setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
                     });
                 } catch (Exception e) {
                     LogManager.log(appCtx, LogManager.SUB_UPLOAD,
                             "循环采集异常：" + e.getMessage());
                 }
                 if (sendRunnable == this) {
-                    MAIN.postDelayed(this, sendIntervalSec * 1000L);
+MAIN.postDelayed(this, sendIntervalSec * 1000L);
                 }
             }
         };
@@ -522,7 +585,7 @@ setStatus(classify(ok, msg) + "（每" + sendIntervalSec + "秒）");
     private static void cancelAll(String reason) {
         if (checkRunnable != null) {
             MAIN.removeCallbacks(checkRunnable);
-checkRunnable = null;
+            checkRunnable = null;
         }
         if (wakeRunnable != null) {
             MAIN.removeCallbacks(wakeRunnable);
@@ -533,7 +596,7 @@ checkRunnable = null;
 
     // ==================== 工具 ====================
     private static boolean isPureNumber(String s) {
-        if (s == null || s.isEmpty() || s.length() > 6) return false;
+if (s == null || s.isEmpty() || s.length() > 6) return false;
         for (int i = 0; i < s.length(); i++) {
             if (!Character.isDigit(s.charAt(i))) return false;
         }
@@ -555,14 +618,15 @@ checkRunnable = null;
         if (ok) return "发送成功";
 
         String m = msg == null ? "" : msg;
-// 飞书地址/配置问题
+
+        // 飞书地址/配置问题
         if (m.contains("未配置") || m.contains("地址错误") || m.contains("密钥")) {
             return "飞书地址错误：" + m;
         }
         // HTTP 400/403/404 基本都是 webhook 填错或被禁用
         if (m.contains("HTTP 400") || m.contains("HTTP 401")
                 || m.contains("HTTP 403") || m.contains("HTTP 404")) {
-            return "飞书地址错误（" + briefHttp(m) + "）";
+return "飞书地址错误（" + briefHttp(m) + "）";
         }
         // 网络层问题
         if (m.contains("ConnectException") || m.contains("UnknownHost")
@@ -581,7 +645,7 @@ checkRunnable = null;
         if (i < 0) return "HTTP ?";
         int end = Math.min(m.length(), i + 9);
         return m.substring(i, end).trim();
-}
+    }
 
     private static String shortMsg(String m) {
         if (m.length() <= 40) return m;
@@ -589,10 +653,15 @@ checkRunnable = null;
     }
 
     private static String cutForLog(String s) {
+        return cutForLog(s, 200);
+    }
+
+    private static String cutForLog(String s, int max) {
         if (s == null) return "null";
         String one = s.replace("\n", " ").replace("\r", " ").trim();
-        if (one.length() <= 200) return one;
-        return one.substring(0, 200) + "…(共" + s.length() + "字)";
+        one = one.replaceAll("\\s+", " ");
+        if (one.length() <= max) return one;
+        return one.substring(0, max) + "…(共" + s.length() + "字)";
     }
 
     /** 给界面用：最近一次状态文字 */
@@ -614,5 +683,6 @@ checkRunnable = null;
         if (!sleeping) return 0;
         return Math.max(0, sleepEndTs - System.currentTimeMillis());
     }
-    }
+}
+
 
