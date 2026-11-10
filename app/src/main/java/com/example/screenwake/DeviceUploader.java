@@ -122,26 +122,42 @@ String ivB64 = enc[1];
                 cardJson.put("msg_type", "interactive");
                 cardJson.put("card", card);
 
+                // 兜底用：纯文本消息（卡片被飞书拒绝时自动改发这个）
+                JSONObject textPayload = new JSONObject();
+                textPayload.put("msg_type", "text");
+                JSONObject textContent = new JSONObject();
+                textContent.put("text",
+                        "【设备硬件密文上报】\n"
+                                + "device_id：" + deviceId + "\n"
+                                + "iv：" + ivB64 + "\n"
+                                + "cipher：\n" + cipherB64 + "\n"
++ "把 iv 和 cipher 粘进 jm.py 运行，生成 已开启.txt");
+                textPayload.put("content", textContent);
+
                 // 3. POST 到飞书
+                boolean useTextPayload = false;
+
                 for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                    JSONObject payload = useTextPayload ? textPayload : cardJson;
                     LogManager.log(app, LogManager.SUB_UPLOAD,
-                            "飞书上报，第 " + attempt + "/" + MAX_ATTEMPTS + " 次尝试");
+                            "飞书上报，第 " + attempt + "/" + MAX_ATTEMPTS + " 次尝试"
+                                    + (useTextPayload ? "（纯文本模式）" : "（卡片模式）"));
 
                     HttpURLConnection connection = null;
                     try {
                         URL url = new URL(webhookUrl.trim());
                         connection = (HttpURLConnection) url.openConnection();
-connection.setRequestMethod("POST");
+                        connection.setRequestMethod("POST");
                         connection.setConnectTimeout(10000);
                         connection.setReadTimeout(15000);
                         connection.setDoOutput(true);
-                        connection.setUseCaches(false);
+connection.setUseCaches(false);
                         connection.setInstanceFollowRedirects(false);
                         connection.setRequestProperty("Content-Type",
                                 "application/json; charset=utf-8");
 
                         try (OutputStream os = connection.getOutputStream()) {
-                            os.write(cardJson.toString().getBytes(StandardCharsets.UTF_8));
+                            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
                         }
 
                         int code = connection.getResponseCode();
@@ -150,13 +166,20 @@ connection.setRequestMethod("POST");
                         String resp = readStream(is);
 
                         LogManager.log(app, LogManager.SUB_UPLOAD,
-"飞书返回 HTTP " + code + " 内容=" + resp);
+                                "飞书返回 HTTP " + code + " 内容=" + resp);
 
                         if (code == 200 && isFeishuOk(resp)) {
                             success = true;
-                            finalMessage = "上报成功";
-                            break;
+                            finalMessage = "上报成功" + (useTextPayload ? "（文本消息）" : "（卡片消息）");
+break;
                         } else {
+                            // 卡片格式被拒 → 下一轮直接发纯文本，保证内容能落地
+                            if (!useTextPayload && resp != null
+                                    && (resp.contains("11246") || resp.contains("200621"))) {
+                                useTextPayload = true;
+                                LogManager.log(app, LogManager.SUB_UPLOAD,
+                                        "卡片被飞书拒绝（格式错误），下次改发纯文本消息");
+                            }
                             finalMessage = "HTTP " + code + " : " + resp;
                         }
                     } catch (Exception e) {
@@ -166,13 +189,13 @@ connection.setRequestMethod("POST");
                         Log.e(TAG, "单次上报异常", e);
                     } finally {
                         if (connection != null) connection.disconnect();
-                    }
+}
 
                     if (!success && attempt < MAX_ATTEMPTS) {
                         try {
                             Thread.sleep(attempt * 2000L);
                         } catch (InterruptedException ie) {
-Thread.currentThread().interrupt();
+                            Thread.currentThread().interrupt();
                             break;
                         }
                     }
@@ -195,10 +218,10 @@ Thread.currentThread().interrupt();
     }
 
     // ==================== AES-CBC 随机IV加密 ====================
-    private static String[] encryptAesCbc(String plainText, String key16) throws Exception {
+private static String[] encryptAesCbc(String plainText, String key16) throws Exception {
         byte[] keyBytes = key16.getBytes(StandardCharsets.UTF_8);
         byte[] ivBytes = new byte[16];
-new SecureRandom().nextBytes(ivBytes);
+        new SecureRandom().nextBytes(ivBytes);
 
         SecretKeySpec keySpec = new SecretKeySpec(keyBytes, "AES");
         IvParameterSpec ivSpec = new IvParameterSpec(ivBytes);
@@ -216,7 +239,7 @@ new SecureRandom().nextBytes(ivBytes);
     // 飞书 HTTP 200 也可能带错误码，例如 {"code":11246,"msg":"parse card json err"}
     private static boolean isFeishuOk(String resp) {
         if (resp == null || resp.trim().isEmpty()) return false;
-        try {
+try {
             JSONObject o = new JSONObject(resp);
             if (o.has("code")) {
                 return o.optInt("code", -1) == 0;
@@ -251,6 +274,4 @@ new SecureRandom().nextBytes(ivBytes);
         return RUNNING.get();
     }
 }
-
-
 
