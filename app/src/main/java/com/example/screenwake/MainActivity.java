@@ -60,21 +60,27 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         addGlobalStatusCard(root);
 
         // 3. 九大功能分类入口
+        // ...前面代码一样...
+
+        // 3. 九大功能分类入口
         addSection(root, "📦 核心业务");
-        addNavButton(root, "💬 文件接收", MultiWsActivity.class);
-        addNavButton(root, "📱 亮屏测试", PatternActivity.class);
-        addNavButton(root, "🌐 内置浏览器", BrowserActivity.class);
+        addNavButton(root, "💬 文件接收", MultiWsActivity.class); // 已有页面
+        addNavButton(root, "📱 亮屏测试", PatternActivity.class); // 已有页面
+        addNavButton(root, "🌐 内置浏览器", BrowserActivity.class); // 已有页面
 
         addSection(root, "🛡️ 唤醒与监控");
-        addNavButton(root, "⚡ 唤醒功能", ScreenWakeService.class);
-        addNavButton(root, "📊 状态检测", WebMonitorActivity.class); // 假设你建了这个类
-        addNavButton(root, "⏰ 定时任务", AlarmSchedulerActivity.class); // 假设你建了这个类
+        // 注意这里，因为 ScreenWakeService 是服务，直接跳 Activity 会崩，下面做了特殊判断
+        addNavButton(root, "⚡ 唤醒功能", ScreenWakeService.class); 
+        // 这两个原本是工具类，需要你后续建对应的子页面
+        addNavButton(root, "📊 状态检测", WebMonitorActivity.class); 
+        addNavButton(root, "⏰ 定时任务", AlarmSchedulerActivity.class); 
 
         addSection(root, "🗂️ 数据与设置");
-        addNavButton(root, "📝 日志查看", LogManagerActivity.class); // 假设你建了这个类
-        addNavButton(root, "☁️ 数据上传", DeviceUploaderActivity.class); // 假设你建了这个类
-        addNavButton(root, "⚙️ 设置与权限", SettingsPage.class);
-
+        // 这三个原本也是工具类，需要你后续建对应的子页面
+        addNavButton(root, "📝 日志查看", LogManagerActivity.class); 
+        addNavButton(root, "☁️ 数据上传", DeviceUploaderActivity.class); 
+        addNavButton(root, "⚙️ 设置与权限", SettingsPage.class); // 已有页面
+// ...后面代码一样...
         // 4. 底部版本信息
         addFooter(root);
 
