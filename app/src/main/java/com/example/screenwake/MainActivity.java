@@ -10,16 +10,16 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Button;
-import android.view.Gravity;
 import android.widget.Toast;
 
 public class MainActivity extends Activity implements CommandPoller.ServerBindNotifyCallback {
 
-    // -------- 颜色配置（深色主题） --------
+    // -------- 颜色配置 --------
     private static final int COLOR_BG     = Color.rgb(20, 27, 36);
     private static final int COLOR_CARD   = Color.rgb(48, 59, 79);
     private static final int COLOR_TEXT   = Color.rgb(220, 227, 234);
@@ -30,7 +30,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     private TextView globalStatusView;
     private final Handler ui = new Handler(Looper.getMainLooper());
     
-    // 每3秒刷新一次状态
     private final Runnable statusTicker = new Runnable() {
         @Override
         public void run() {
@@ -60,34 +59,33 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         addGlobalStatusCard(root);
 
         // 3. 九大功能分类入口
-        // ...前面代码一样...
-
-        // 3. 九大功能分类入口
         addSection(root, "📦 核心业务");
-        addNavButton(root, "💬 文件接收", MultiWsActivity.class); // 已有页面
-        addNavButton(root, "📱 亮屏测试", PatternActivity.class); // 已有页面
-        addNavButton(root, "🌐 内置浏览器", BrowserActivity.class); // 已有页面
+        // 假设你已经有了这些类，直接跳转
+        addNavButton(root, "💬 文件接收", MultiWsActivity.class);
+        addNavButton(root, "📱 亮屏测试", PatternActivity.class);
+        addNavButton(root, "🌐 内置浏览器", BrowserActivity.class);
 
         addSection(root, "🛡️ 唤醒与监控");
-        // 注意这里，因为 ScreenWakeService 是服务，直接跳 Activity 会崩，下面做了特殊判断
-        addNavButton(root, "⚡ 唤醒功能", ScreenWakeService.class); 
-        // 这两个原本是工具类，需要你后续建对应的子页面
-        addNavButton(root, "📊 状态检测", WebMonitorActivity.class); 
-        addNavButton(root, "⏰ 定时任务", AlarmSchedulerActivity.class); 
+        // 唤醒服务
+        addNavButton(root, "⚡ 唤醒功能", ScreenWakeService.class);
+        
+        // 👇 下面这些还没建，暂时用提示代替，保证编译通过 👇
+        addButton(root, "📊 状态检测 (待开发)", () -> toast("等待开发中..."));
+        addButton(root, "⏰ 定时任务 (待开发)", () -> toast("等待开发中..."));
 
         addSection(root, "🗂️ 数据与设置");
-        // 这三个原本也是工具类，需要你后续建对应的子页面
-        addNavButton(root, "📝 日志查看", LogManagerActivity.class); 
-        addNavButton(root, "☁️ 数据上传", DeviceUploaderActivity.class); 
-        addNavButton(root, "⚙️ 设置与权限", SettingsPage.class); // 已有页面
-// ...后面代码一样...
+        addButton(root, "📝 日志查看 (待开发)", () -> toast("等待开发中..."));
+        addButton(root, "☁️ 数据上传 (待开发)", () -> toast("等待开发中..."));
+        
+        // SettingsPage 是你已经建好的
+        addNavButton(root, "⚙️ 设置与权限", SettingsPage.class);
+
         // 4. 底部版本信息
         addFooter(root);
 
         scroll.addView(root);
         setContentView(scroll);
 
-        // 启动定时状态刷新
         ui.post(statusTicker);
     }
 
@@ -111,7 +109,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
     }
 
     // ================================================================
-    // 界面构建（导航与卡片）
+    // 界面构建
     // ================================================================
 
     private void addHeader(LinearLayout root) {
@@ -166,9 +164,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         root.addView(tv);
     }
 
-    /**
-     * 纯导航按钮：点击直接跳转到对应 Activity
-     */
     private void addNavButton(LinearLayout root, String text, Class<?> targetActivity) {
         Button b = new Button(this);
         b.setText(text);
@@ -185,22 +180,38 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         b.setLayoutParams(lp);
 
         b.setOnClickListener(v -> {
+            if (targetActivity == ScreenWakeService.class) {
+                Intent intent = new Intent(this, ScreenWakeService.class);
+                startService(intent);
+                toast("唤醒服务已启动");
+                return;
+            }
             try {
-                // 如果是 Service，不能直接 startActivity，这里直接提示去子页面处理，或者直接启动
-                if (targetActivity == ScreenWakeService.class) {
-                    // 如果唤醒服务不需要界面，这里直接启动服务
-                    Intent intent = new Intent(this, ScreenWakeService.class);
-                    startService(intent);
-                    toast("唤醒服务已启动");
-                    return;
-                }
-                
-                // 正常跳转页面
                 startActivity(new Intent(this, targetActivity));
             } catch (Exception e) {
-                toast("该页面（" + targetActivity.getSimpleName() + "）尚未创建或未在 Manifest 注册！");
+                toast("该页面尚未创建或未在 Manifest 注册！");
             }
         });
+        root.addView(b);
+    }
+
+    // 备用按钮（用于还没建的页面）
+    private void addButton(LinearLayout root, String text, Runnable action) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextColor(COLOR_TEXT);
+        b.setTextSize(16);
+        b.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        b.setBackground(roundedBg(COLOR_CARD, dp(10)));
+        b.setPadding(dp(16), 0, dp(16), 0);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        lp.bottomMargin = dp(10);
+        b.setLayoutParams(lp);
+
+        b.setOnClickListener(v -> action.run());
         root.addView(b);
     }
 
@@ -213,10 +224,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         footer.setPadding(0, dp(32), 0, dp(16));
         root.addView(footer);
     }
-
-    // ================================================================
-    // 状态刷新
-    // ================================================================
 
     private void refreshGlobalStatus() {
         if (globalStatusView == null) return;
@@ -233,10 +240,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
         globalStatusView.setText(info);
         globalStatusView.setTextColor(COLOR_OK);
     }
-
-    // ================================================================
-    // 必须留在主页的逻辑：服务器绑定回调
-    // ================================================================
 
     @Override
     public void needShowBindDialog(String bindId, boolean isChanged) {
@@ -263,10 +266,6 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 .setCancelable(false)
                 .show();
     }
-
-    // ================================================================
-    // UI 辅助
-    // ================================================================
 
     private GradientDrawable roundedBg(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
