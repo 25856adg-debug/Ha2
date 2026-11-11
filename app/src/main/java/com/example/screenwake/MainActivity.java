@@ -475,10 +475,12 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 }).show());
 
         // ================= WebSocket 多路接收（子页面） =================
-        addSection(root, "WebSocket 多路接收");
-        addButton(root, "进入五路接收页面", () ->
-                startActivity(new Intent(this, MultiWsActivity.class)));
-
+        Button settingsBtn = new Button(this);
+        settingsBtn.setText("设置与权限");
+        settingsBtn.setOnClickListener(v ->
+            startActivity(new Intent(MainActivity.this, SettingsPage.class))
+        );
+        root.addView(settingsBtn);
         // ================= 系统设置与权限 =================
         private void buildUi() {
           addButton(root, "设置与权限",
