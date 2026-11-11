@@ -455,7 +455,7 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             toast("已发送立即触发请求");
         });
             // ================= 服务器信任管理 =================
-    addButton(root, "清除服务器信任标识码", () -> new AlertDialog.Builder(this)
+      addButton(root, "清除服务器信任标识码", () -> new AlertDialog.Builder(this)
             .setTitle("清除信任")
             .setMessage("确定清除本机信任的服务器标识码？")
             .setNegativeButton("取消", null)
@@ -464,13 +464,17 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 toast(ok ? "已清除服务器信任标识码" : "清除失败，请检查存储");
             }).show());  // 注意：这里结尾是 .show()); 
     // ================= WebSocket 多路接收（子页面） =================
-    addSection(root, "WebSocket 多路接收");
-    addButton(root, "进入五路接收页面", () ->
+      addSection(root, "WebSocket 多路接收");
+      addButton(root, "进入五路接收页面", () ->
                 startActivity(new Intent(this, MultiWsActivity.class)));
-    addButton(root, "设置与权限", () -> 
+      addButton(root, "设置与权限", () -> 
             startActivity(new Intent(MainActivity.this, SettingsPage.class))
-    );
-}
+      );
+    
+     ScrollView scroll = new ScrollView(this);
+     scroll.addView(root);       // root 是你的主容器（LinearLayout）
+     setContentView(scroll);
+    }
 // ================= 状态显示 ================
     private void updateWebStatus() {
         if (webStatus == null) return;
