@@ -454,38 +454,28 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
             updateTimerStatus();
             toast("已发送立即触发请求");
         });
+            // ================= 服务器信任管理 =================
+    addButton(root, "清除服务器信任标识码", () -> new AlertDialog.Builder(this)
+            .setTitle("清除信任")
+            .setMessage("确定清除本机信任的服务器标识码？")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确定", (d, w) -> {
+                boolean ok = LogManager.setTrustedServerBindId(this, "");
+                toast(ok ? "已清除服务器信任标识码" : "清除失败，请检查存储");
+            }).show());  // 注意：这里结尾是 .show()); 
 
-        // ================= 服务器信任 =================
-        addSection(root, "服务器信任管理");
-        addButton(root, "查看当前信任服务器ID", () -> {
-            String id = LogManager.getTrustedServerBindId(this);
-            if (id == null || id.isEmpty()) {
-                confirmDialog("受信任服务器", "当前未信任任何服务器");
-            } else {
-                confirmDialog("受信任服务器bindId", id);
-            }
-        });
-        addButton(root, "清除服务器信任标识码", () -> new AlertDialog.Builder(this)
-                .setTitle("清除信任")
-                .setMessage("确定清除本机信任的服务器标识码？")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("确定", (d, w) -> {
-                    boolean ok = LogManager.setTrustedServerBindId(this, null);
-                    toast(ok ? "已清除服务器信任标识码" : "清除失败，请检查存储权限");
-                }).show());
-
-        // ================= WebSocket 多路接收（子页面） =================
-        Button settingsBtn = new Button(this);
-        settingsBtn.setText("设置与权限");
-        settingsBtn.setOnClickListener(v ->
+    // ================= WebSocket 多路接收（子页面） =================
+    addButton(root, "设置与权限", () -> 
             startActivity(new Intent(MainActivity.this, SettingsPage.class))
-        );
-        root.addView(settingsBtn);
-        // ================= 系统设置与权限 =================
-        private void buildUi() {
-          addButton(root, "设置与权限",
+    );
+    private void buildUi() {
+    addButton(root, "设置与权限",
             () -> startActivity(new Intent(this, SettingsPage.class)));
-        }
+    }
+    
+} // 🔴 关键：这个括号用来闭合 buildLauncher() 方法，原来你漏掉了这个
+
+// 注意：原来你写的 private void buildUi() { ... } 整段直接删除，不需要了。
     // ================= 状态显示 =================
     private void updateWebStatus() {
         if (webStatus == null) return;
