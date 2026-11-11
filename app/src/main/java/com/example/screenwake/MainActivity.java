@@ -1,5 +1,5 @@
 package com.example.screenwake;
-
+import android.content.Intent;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -480,23 +480,10 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 startActivity(new Intent(this, MultiWsActivity.class)));
 
         // ================= 系统设置与权限 =================
-        addSection(root, "系统设置与权限申请");
-        addButton(root, "申请全部文件访问权限", this::requestAllFilePermission);
-        addButton(root, "申请普通存储权限", this::requestNormalStoragePermission);
-        addButton(root, "申请相机权限", this::requestCameraPermission);
-        addButton(root, "Wi-Fi 设置", () -> openSystemSettings(Settings.ACTION_WIFI_SETTINGS));
-        addButton(root, "网络设置", () -> openSystemSettings(Settings.ACTION_WIRELESS_SETTINGS));
-        addButton(root, "流量使用情况", () -> openSystemSettings(Settings.ACTION_DATA_USAGE_SETTINGS));
-        addButton(root, "本应用权限与后台设置", () -> openSystemSettings(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:" + getPackageName())));
-        addButton(root, "退出启动器", this::finish);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(root);
-        setContentView(scroll);
-    }
-
+        private void buildUi() {
+          addButton(root, "设置与权限",
+            () -> startActivity(new Intent(this, SettingsPage.class)));
+        }
     // ================= 状态显示 =================
     private void updateWebStatus() {
         if (webStatus == null) return;
