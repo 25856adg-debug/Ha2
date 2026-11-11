@@ -463,20 +463,15 @@ public class MainActivity extends Activity implements CommandPoller.ServerBindNo
                 boolean ok = LogManager.setTrustedServerBindId(this, "");
                 toast(ok ? "已清除服务器信任标识码" : "清除失败，请检查存储");
             }).show());  // 注意：这里结尾是 .show()); 
-
     // ================= WebSocket 多路接收（子页面） =================
+    addSection(root, "WebSocket 多路接收");
+    addButton(root, "进入五路接收页面", () ->
+                startActivity(new Intent(this, MultiWsActivity.class)));
     addButton(root, "设置与权限", () -> 
             startActivity(new Intent(MainActivity.this, SettingsPage.class))
     );
-    private void buildUi() {
-    addButton(root, "设置与权限",
-            () -> startActivity(new Intent(this, SettingsPage.class)));
-    }
-    
-} // 🔴 关键：这个括号用来闭合 buildLauncher() 方法，原来你漏掉了这个
-
-// 注意：原来你写的 private void buildUi() { ... } 整段直接删除，不需要了。
-    // ================= 状态显示 =================
+}
+// ================= 状态显示 ================
     private void updateWebStatus() {
         if (webStatus == null) return;
 
